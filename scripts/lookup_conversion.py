@@ -8,7 +8,7 @@ with open("scripts/cpp_lookup_table.txt") as inFile:
 
     for line in lines:
         matches = pattern.findall()
-        with open("scripts/out.txt", "w") as outFile:
+        with open("scripts/out.txt", "a") as outFile:
             for match in matches:
-                print("Instruction {}")
+                print('Instruction::new("', match[0], '", ', )
     
