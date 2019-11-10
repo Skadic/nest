@@ -13,7 +13,7 @@ pub struct Bus {
 impl Bus {
 
     pub fn new(cpu: Rc<RefCell<Olc6502>>) -> Rc<RefCell<Self>> {
-        let mut bus = Rc::new(RefCell::new(
+        let bus = Rc::new(RefCell::new(
             Bus {
                 cpu: cpu.clone(),
                 ram: [0; RAM_SIZE]

@@ -64,7 +64,7 @@ pub struct Olc6502 {
 impl Olc6502 {
 
     pub fn new() -> Self {
-        let mut cpu = Olc6502 {
+        Olc6502 {
             bus: None,
             a: 0,
             x: 0,
@@ -77,9 +77,7 @@ impl Olc6502 {
             addr_rel: 0,
             opcode: 0,
             cycles: 0,
-        };
-
-        cpu
+        }
     }
 
     pub fn connect_bus(&mut self, bus: Rc<RefCell<Bus>> ) {
@@ -106,7 +104,57 @@ impl Olc6502 {
         };
     }
 
-    // Addressing Modes. These return true if they need another clock cycle. false otherwise
+    fn clock(&mut self) {
+        if self.cycles == 0 {
+
+            // Read the next opcode from the memory at the program counter
+            self.opcode = self.read(self.pc);
+            self.pc += 1;
+
+            // Get the instruction specified by the next opcode
+            let instruction = &LOOKUP[self.opcode as usize];
+
+            // Get starting number of cycles
+            self.cycles = instruction.cycles;
+
+            // Set the addressing mode specified by the instruction
+            let additional_cycle_addrmode = (instruction.addrmode)(self);
+
+            // Call the actual functionality of the Instruction
+            let additional_cycle_operate = (instruction.operate)(self);
+
+            // If both addrmode and operate need another clock cycle, increase the required cycles by 1
+            if additional_cycle_addrmode && additional_cycle_operate {
+                self.cycles += 1
+            };
+        }
+
+        self.cycles -= 1;
+    }
+
+    fn reset(&self) {}
+
+    /// Interrupt request signal
+    fn irq(&self) {}
+
+    /// Non-maskable interrupt request signal
+    fn nmi(&self) {}
+
+    /// Fetches data from the given address
+    fn fetch(&mut self) -> u8 {
+        // If the addressing mode is 'implied', then there is no data to fetch
+        // In this case, the fetched data is the data in the accumulator (see the IMP addressing mode)
+        if LOOKUP[self.opcode as usize].addrmode as usize != Self::IMP as usize {
+            self.fetched = self.read(self.addr_abs);
+        }
+        self.fetched
+    }
+}
+
+
+// Addressing Modes. These return true if they need another clock cycle. false otherwise
+#[allow(non_snake_case, unused)]
+impl Olc6502 {
 
     /// Implied Addressing Mode.
     /// This means either that there is no additional data is part of the instruction,
@@ -248,7 +296,7 @@ impl Olc6502 {
         let hi = self.read((offset + 1) & 0x00FF) as u16;
 
         self.addr_abs = (hi << 8) | lo;
-        self.addr_abs += y;
+        self.addr_abs += self.y as u16;
 
 
         // As we could cross a page boundary by offsetting the absolute address,
@@ -273,23 +321,98 @@ impl Olc6502 {
 
         false
     }
+}
 
+// Opcodes. These return true if they *potentially* need another clock cycle. false otherwise
+// They also set the flags accordingly
+#[allow(non_snake_case, unused)]
+impl Olc6502 {
 
-
-    // Opcodes. These return true if they need another clock cycle. false otherwise
     fn ADC(&mut self) -> bool { false }
-    fn AND(&mut self) -> bool { false }
+
+    /// Performs a binary and between the accumulator and the fetched data
+    fn AND(&mut self) -> bool {
+        self.a &= self.fetch();
+        // If the result is 0, set the Zero flag
+        self.set_flag(Flags6502::Z, self.a == 0x00);
+        // If the result is negative, set the Negative flag
+        self.set_flag(Flags6502::N, self.a & 0x80 > 0);
+
+        // Needs another clock cycle if page boundaries are crossed
+        // As this is *potential* for operations, no conditionals are required
+        true
+    }
+
+
     fn ASL(&mut self) -> bool { false }
-    fn BCC(&mut self) -> bool { false }
-    fn BCS(&mut self) -> bool { false }
-    fn BEQ(&mut self) -> bool { false }
+
+    /// Branch if the carry flag of the status register is clear
+    fn BCC(&mut self) -> bool {
+        if !self.get_flag(Flags6502::C) {
+            self.branch();
+        }
+        false
+    }
+
+    /// Branch if the carry flag of the status register is set
+    fn BCS(&mut self) -> bool {
+        if self.get_flag(Flags6502::C) {
+            self.branch()
+        }
+        false
+    }
+
+    /// Branch if equal (i.e. the Zero flag is set)
+    fn BEQ(&mut self) -> bool {
+        if self.get_flag(Flags6502::Z) {
+            self.branch()
+        }
+        false
+    }
+
+    /// Branch if not equal (i.e. the Zero flag is clear)
+    fn BNE(&mut self) -> bool {
+        if !self.get_flag(Flags6502::Z) {
+            self.branch()
+        }
+        false
+    }
+
+    /// Branch if positive
+    fn BPL(&mut self) -> bool {
+        if !self.get_flag(Flags6502::N) {
+            self.branch()
+        }
+        false
+    }
+
+    /// Branch if negative
+    fn BMI(&mut self) -> bool {
+        if self.get_flag(Flags6502::N) {
+            self.branch()
+        }
+        false
+    }
+
+    /// Branch if overflowed
+    fn BVC(&mut self) -> bool {
+        if self.get_flag(Flags6502::V) {
+            self.branch()
+        }
+        false
+    }
+
+    /// Branch if not overflowed
+    fn BVS(&mut self) -> bool {
+        if !self.get_flag(Flags6502::V) {
+            self.branch()
+        }
+        false
+    }
+
+
     fn BIT(&mut self) -> bool { false }
-    fn BMI(&mut self) -> bool { false }
-    fn BNE(&mut self) -> bool { false }
-    fn BPL(&mut self) -> bool { false }
     fn BRK(&mut self) -> bool { false }
-    fn BVC(&mut self) -> bool { false }
-    fn BVS(&mut self) -> bool { false }
     fn CLC(&mut self) -> bool { false }
     fn CLD(&mut self) -> bool { false }
     fn CLI(&mut self) -> bool { false }
@@ -337,42 +460,22 @@ impl Olc6502 {
     // Illegal Opcode
     fn XXX(&mut self) -> bool { false }
 
+    /// Branch method, because all branches *basically* work the same, just with different branch conditions
+    fn branch(&mut self) {
+        // Uses 1 more cycle for branching
+        self.cycles += 1;
 
-    fn clock(&mut self) {
-        if self.cycles == 0 {
+        // Calculate jump address
+        let new_addr = self.pc + self.addr_rel;
 
-            // Read the next opcode from the memory at the program counter
-            self.opcode = self.read(self.pc);
-            self.pc += 1;
-
-            // Get the instruction specified by the next opcode
-            let instruction = &LOOKUP[self.opcode as usize];
-
-            // Get starting number of cycles
-            self.cycles = instruction.cycles;
-
-            // Set the addressing mode specified by the instruction
-            let additional_cycle_addrmode = (instruction.addrmode)(self);
-
-            // Call the actual functionality of the Instruction
-            let additional_cycle_operate = (instruction.operate)(self);
-
-            // If both addrmode and operate need another clock cycle, increase the required cycles by 1
-            if additional_cycle_addrmode && additional_cycle_operate {
-                self.cycles += 1
-            };
+        // If the branch requires crossing a page boundary, it requires 1 more cycle
+        if (new_addr & 0xFF00) != (self.pc & 0xFF00) {
+            self.cycles += 1;
         }
 
-        self.cycles -= 1;
+        self.pc = new_addr;
     }
 
-    fn reset(&self) {}
-    /// Interrupt request signal
-    fn irq(&self) {}
-    /// Non-maskable interrupt request signal
-    fn nmi(&self) {}
-
-    fn fetch(&self) -> u8 { 0 }
 }
 
 struct Instruction{
