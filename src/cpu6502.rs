@@ -44,7 +44,7 @@ impl Flags6502 {
 }
 
 
-pub struct Olc6502 {
+pub struct Cpu6502 {
     bus: Option<Rc<RefCell<Bus>>>,
     a: u8, // Accumulator Register
     x: u8, // X Register
@@ -61,10 +61,10 @@ pub struct Olc6502 {
 }
 
 #[allow(non_snake_case, unused)]
-impl Olc6502 {
+impl Cpu6502 {
 
     pub fn new() -> Self {
-        Olc6502 {
+        Cpu6502 {
             bus: None,
             a: 0,
             x: 0,
@@ -154,7 +154,7 @@ impl Olc6502 {
 
 // Addressing Modes. These return true if they need another clock cycle. false otherwise
 #[allow(non_snake_case, unused)]
-impl Olc6502 {
+impl Cpu6502 {
 
     /// Implied Addressing Mode.
     /// This means either that there is no additional data is part of the instruction,
@@ -326,9 +326,11 @@ impl Olc6502 {
 // Opcodes. These return true if they *potentially* need another clock cycle. false otherwise
 // They also set the flags accordingly
 #[allow(non_snake_case, unused)]
-impl Olc6502 {
+impl Cpu6502 {
 
-    fn ADC(&mut self) -> bool { false }
+    fn ADC(&mut self) -> bool {
+
+    }
 
     /// Performs a binary and between the accumulator and the fetched data
     fn AND(&mut self) -> bool {
@@ -413,16 +415,47 @@ impl Olc6502 {
 
     fn BIT(&mut self) -> bool { false }
     fn BRK(&mut self) -> bool { false }
-    fn CLC(&mut self) -> bool { false }
-    fn CLD(&mut self) -> bool { false }
-    fn CLI(&mut self) -> bool { false }
-    fn CLV(&mut self) -> bool { false }
+
+    /// Clear Carry flag
+    fn CLC(&mut self) -> bool {
+        self.set_flag(Flags6502::C, false);
+        false
+    }
+
+    /// Clear Decimal Mode flag
+    fn CLD(&mut self) -> bool {
+        self.set_flag(Flags6502::D, false);
+        false
+    }
+
+    /// Clear Interrupt Disable Flag
+    fn CLI(&mut self) -> bool {
+        self.set_flag(Flags6502::I, false);
+        false
+    }
+
+    /// Clear Overflow Flag
+    fn CLV(&mut self) -> bool {
+        self.set_flag(Flags6502::V, false);
+        false
+    }
+
     fn CMP(&mut self) -> bool { false }
     fn CPX(&mut self) -> bool { false }
     fn CPY(&mut self) -> bool { false }
     fn DEC(&mut self) -> bool { false }
-    fn DEX(&mut self) -> bool { false }
-    fn DEY(&mut self) -> bool { false }
+
+    /// Decrements the X-register by 1
+    fn DEX(&mut self) -> bool {
+        self.x -= 1;
+        false
+    }
+
+    /// Decrements the Y register by 1
+    fn DEY(&mut self) -> bool {
+        self.y -= 1;
+        false
+    }
     fn EOR(&mut self) -> bool { false }
     fn INC(&mut self) -> bool { false }
     fn INX(&mut self) -> bool { false }
@@ -480,13 +513,13 @@ impl Olc6502 {
 
 struct Instruction{
     pub name: String,
-    pub operate: fn(&mut Olc6502) -> bool,
-    pub addrmode: fn(&mut Olc6502) -> bool,
+    pub operate: fn(&mut Cpu6502) -> bool,
+    pub addrmode: fn(&mut Cpu6502) -> bool,
     pub cycles: u8
 }
 
 impl Instruction {
-    pub fn new(name: &str, operate: fn(&mut Olc6502) -> bool, addrmode: fn(&mut Olc6502) -> bool, cycles: u8) -> Self {
+    pub fn new(name: &str, operate: fn(&mut Cpu6502) -> bool, addrmode: fn(&mut Cpu6502) -> bool, cycles: u8) -> Self {
         Instruction {
             name: String::from(name),
             operate,
@@ -500,12 +533,12 @@ impl Instruction {
 
 #[cfg(test)]
 mod test {
-    use crate::olc6502::Olc6502;
-    use crate::olc6502::Flags6502;
+    use crate::cpu6502::Cpu6502;
+    use crate::cpu6502::Flags6502;
 
     #[test]
     fn flags_test() {
-        let mut cpu = Olc6502::new();
+        let mut cpu = Cpu6502::new();
 
         cpu.set_flag(Flags6502::C, true);
         assert_eq!(cpu.status, Flags6502::C);

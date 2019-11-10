@@ -1,18 +1,18 @@
-use crate::olc6502::Olc6502;
+use crate::cpu6502::Cpu6502;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 const RAM_SIZE: usize = 64 * 1024;
 
 pub struct Bus {
-    cpu: Rc<RefCell<Olc6502>>,
+    cpu: Rc<RefCell<Cpu6502>>,
     ram: [u8; RAM_SIZE]
 }
 
 
 impl Bus {
 
-    pub fn new(cpu: Rc<RefCell<Olc6502>>) -> Rc<RefCell<Self>> {
+    pub fn new(cpu: Rc<RefCell<Cpu6502>>) -> Rc<RefCell<Self>> {
         let bus = Rc::new(RefCell::new(
             Bus {
                 cpu: cpu.clone(),
