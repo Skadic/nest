@@ -15,6 +15,10 @@ bitflags! {
         const N = 0x80; // Negative
     }
 }
+
+/// The 6502's hardcoded stack pointer base location
+const STACK_POINTER_BASE: u16 = 0x0100;
+
 lazy_static! {
     static ref LOOKUP: [Instruction; 16 * 16] = [
         Instruction::new("BRK", Olc6502::BRK, Olc6502::IMM, 7), Instruction::new("ORA", Olc6502::ORA, Olc6502::IZX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 3), Instruction::new("ORA", Olc6502::ORA, Olc6502::ZP0, 3), Instruction::new("ASL", Olc6502::ASL, Olc6502::ZP0, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("PHP", Olc6502::PHP, Olc6502::IMP, 3), Instruction::new("ORA", Olc6502::ORA, Olc6502::IMM, 2), Instruction::new("ASL", Olc6502::ASL, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("ORA", Olc6502::ORA, Olc6502::ABS, 4), Instruction::new("ASL", Olc6502::ASL, Olc6502::ABS, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6),
@@ -49,7 +53,7 @@ pub struct Cpu6502 {
     a: u8, // Accumulator Register
     x: u8, // X Register
     y: u8, // Y Register
-    stkp: u8, // Stack Pointer
+    stkp: u16, // Stack Pointer
     pc: u16, // Program Counter
     status: Flags6502, // Status Register
     fetched: u8, // Fetched data for executing instruction
@@ -328,8 +332,39 @@ impl Cpu6502 {
 #[allow(non_snake_case, unused)]
 impl Cpu6502 {
 
+    /// Addition of the fetched value to the accumulator with carry bit
+    /// This instruction can overflow the accumulator register if working with signed numbers and the value overflows.
+    /// In that case the following truth table determines whether an overflow happened:
+    /// Here, A is the accumulator register, M is the fetched value, R the result and V the Overflow flag. 0 = Positive value, 1 = Negative value
+    /// Each letter (except V) refers to the most significant bit of the specified value
+    ///
+    /// | A | M | R | V |
+    /// |---|---|---|---|
+    /// | 0 | 0 | 0 | 0 |
+    /// | 0 | 0 | 1 | 1 |
+    /// | 0 | 1 | 0 | 0 |
+    /// | 0 | 1 | 1 | 0 |
+    /// | 1 | 0 | 0 | 0 |
+    /// | 1 | 0 | 1 | 0 |
+    /// | 1 | 1 | 0 | 1 |
+    /// | 1 | 1 | 1 | 0 |
+    ///
+    /// As a result, the formula that fulfills this truth table is V = (A ^ R) & (M ^ R)
     fn ADC(&mut self) -> bool {
+        self.fetch();
+        // Add the accumulator, the fetched data, and the carry bit
+        let temp: u16 = self.a as u16 + self.fetched as u16 + self.get_flag(Flags6502::C) as u16;
+        // If the sum overflows, the 8-bit range, set the Carry bit
+        self.set_flag(Flags6502::C, temp > 0xFF);
+        // If the result of the sum (within 8-bit range) is Zero, set the Zero flag
+        self.set_flag(Flags6502::Z, (temp & 0x00FF) == 0);
+        // If the result is (potentially) negative, check the most significant bit and set the flag accordingly
+        self.set_flag(Flags6502::N, (temp & 0x80) > 0);
+        // Set the overflow flag according to the determined formula
+        self.set_flag(Flags6502::V, ((self.a as u16 ^ temp) & (self.fetched as u16 ^ temp) & 0x0080) > 0);
 
+        self.a = (temp & 0x00FF) as u8;
+        true
     }
 
     /// Performs a binary and between the accumulator and the fetched data
@@ -344,7 +379,6 @@ impl Cpu6502 {
         // As this is *potential* for operations, no conditionals are required
         true
     }
-
 
     fn ASL(&mut self) -> bool { false }
 
@@ -468,15 +502,56 @@ impl Cpu6502 {
     fn LSR(&mut self) -> bool { false }
     fn NOP(&mut self) -> bool { false }
     fn ORA(&mut self) -> bool { false }
-    fn PHA(&mut self) -> bool { false }
+
+    // Push accumulator to the stack
+    fn PHA(&mut self) -> bool {
+        self.write(STACK_POINTER_BASE + self.stkp, self.a);
+        self.stkp -= 1;
+        false
+    }
+
     fn PHP(&mut self) -> bool { false }
-    fn PLA(&mut self) -> bool { false }
+
+    // Pop off the stack into the accumulator
+    fn PLA(&mut self) -> bool {
+        self.stkp += 1;
+        self.a = self.read(STACK_POINTER_BASE + self.stkp);
+        self.set_flag(Flags6502::Z, self.a == 0);
+        self.set_flag(Flags6502::N, (self.a & 0x80) > 0);
+        false
+    }
+
     fn PLP(&mut self) -> bool { false }
     fn ROL(&mut self) -> bool { false }
     fn ROR(&mut self) -> bool { false }
     fn RTI(&mut self) -> bool { false }
     fn RTS(&mut self) -> bool { false }
-    fn SBC(&mut self) -> bool { false }
+
+    /// Subtraction of the fetched value from the accumulator with carry bit (which is a borrow bit in this case)
+    /// The Operation is `A = A - M - (1 - C)`
+    /// This can also be written as `A = A + -M + 1 + C`, so Addition Hardware can be reused
+    ///
+    /// Code note:
+    /// I actually have no idea why M is inverted without adding the +1 here.
+    /// As -M should be equal to ~M+1, A should equal A + ~M + 2 + C, not A + ~M + C.
+    /// Idk. I'll come back to this if it doesn't work. If it works, how even?
+    fn SBC(&mut self) -> bool {
+        self.fetch();
+
+        // Invert M
+        let value = (self.fetched as u16) ^ 0x00FF;
+
+        // Add just like in ADC
+        let temp: u16 = self.a as u16 + value + self.get_flag(Flags6502::C) as u16;
+        self.set_flag(Flags6502::C, temp > 0xFF);
+        self.set_flag(Flags6502::Z, (temp & 0x00FF) == 0);
+        self.set_flag(Flags6502::N, (temp & 0x80) > 0);
+        self.set_flag(Flags6502::V, ((self.a as u16 ^ temp) & (self.fetched as u16 ^ temp) & 0x0080) > 0);
+
+        self.a = (temp & 0x00FF) as u8;
+        true
+    }
+
     fn SEC(&mut self) -> bool { false }
     fn SED(&mut self) -> bool { false }
     fn SEI(&mut self) -> bool { false }
