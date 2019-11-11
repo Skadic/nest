@@ -18,6 +18,12 @@ bitflags! {
 /// The 6502's hardcoded stack pointer base location
 const STACK_POINTER_BASE: u16 = 0x0100;
 
+/// The location of the new program counter when an Interrupt Request happens
+const IRQ_PROGRAM_COUNTER: u16 = 0xFFFE;
+
+/// The location of the new program counter when a Non-Maskable Interrupt happens
+const NMI_PROGRAM_COUNTER: u16 = 0xFFFA;
+
 lazy_static! {
     static ref LOOKUP: [Instruction; 16 * 16] = [
         Instruction::new("BRK", Cpu6502::BRK, Cpu6502::IMM, 7), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::IZX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 3), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::ZP0, 3), Instruction::new("ASL", Cpu6502::ASL, Cpu6502::ZP0, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("PHP", Cpu6502::PHP, Cpu6502::IMP, 3), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::IMM, 2), Instruction::new("ASL", Cpu6502::ASL, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::ABS, 4), Instruction::new("ASL", Cpu6502::ASL, Cpu6502::ABS, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6),
@@ -37,13 +43,6 @@ lazy_static! {
         Instruction::new("CPX", Cpu6502::CPX, Cpu6502::IMM, 2), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::IZX, 6), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("CPX", Cpu6502::CPX, Cpu6502::ZP0, 3), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ZP0, 3), Instruction::new("INC", Cpu6502::INC, Cpu6502::ZP0, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("INX", Cpu6502::INX, Cpu6502::IMP, 2), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::IMM, 2), Instruction::new("NOP", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::SBC, Cpu6502::IMP, 2), Instruction::new("CPX", Cpu6502::CPX, Cpu6502::ABS, 4), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ABS, 4), Instruction::new("INC", Cpu6502::INC, Cpu6502::ABS, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6),
         Instruction::new("BEQ", Cpu6502::BEQ, Cpu6502::REL, 2), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::IZY, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ZPX, 4), Instruction::new("INC", Cpu6502::INC, Cpu6502::ZPX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("SED", Cpu6502::SED, Cpu6502::IMP, 2), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ABY, 4), Instruction::new("NOP", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ABX, 4), Instruction::new("INC", Cpu6502::INC, Cpu6502::ABX, 7), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7),
     ];
-}
-
-
-impl Flags6502 {
-    pub fn none() -> Self {
-        Flags6502::C ^ Flags6502::C
-    }
 }
 
 
@@ -74,7 +73,7 @@ impl Cpu6502 {
             y: 0,
             stkp: 0,
             pc: 0,
-            status: Flags6502::none(),
+            status: Flags6502::empty(),
             fetched: 0,
             addr_abs: 0,
             addr_rel: 0,
@@ -135,13 +134,100 @@ impl Cpu6502 {
         self.cycles -= 1;
     }
 
-    fn reset(&self) {}
+    // Configure the CPU into a known state
+    fn reset(&mut self) {
+        self.a = 0;
+        self.x = 0;
+        self.y = 0;
+        self.stkp = 0xFD;
+        self.status = Flags6502::empty() | Flags6502::U;
+
+        // Hardcoded address that contains the address the program counter should be set to, in case of a reset
+        self.addr_abs = 0xFFFC;
+        let lo = self.read(self.addr_abs + 0) as u16;
+        let hi = self.read(self.addr_abs + 1) as u16;
+
+        self.pc = (hi << 8) | lo;
+
+        self.addr_abs = 0x0000;
+        self.addr_rel = 0x0000;
+        self.fetched = 0x00;
+
+        // A reset takes time
+        self.cycles = 8;
+    }
 
     /// Interrupt request signal
-    fn irq(&self) {}
+    fn irq(&mut self) {
+        if !self.get_flag(Flags6502::I) {
+            // Save the Program counter to the stack
+            self.write(STACK_POINTER_BASE + self.stkp, ((self.pc >> 8) & 0x00FF) as u8);
+            self.stkp -= 1;
+            self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
+            self.stkp -= 1;
+
+            // Set flags accordingly
+            self.set_flag(Flags6502::B, false);
+            self.set_flag(Flags6502::U, true);
+            self.set_flag(Flags6502::I, true);
+
+            // Save the status register to stack
+            self.write(STACK_POINTER_BASE + self.stkp, self.status.bits());
+            self.stkp -= 1;
+
+            // The value of the new program counter sits at this hardcoded address
+            self.addr_abs = IRQ_PROGRAM_COUNTER;
+            let lo = self.read(self.addr_abs + 0) as u16;
+            let hi = self.read(self.addr_abs + 1) as u16;
+            self.pc = (hi << 8) | lo;
+
+            // Interrupts take time
+            self.cycles = 7;
+        }
+    }
 
     /// Non-maskable interrupt request signal
-    fn nmi(&self) {}
+    fn nmi(&mut self) {
+        // Save the Program counter to the stack
+        self.write(STACK_POINTER_BASE + self.stkp, ((self.pc >> 8) & 0x00FF) as u8);
+        self.stkp -= 1;
+        self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
+        self.stkp -= 1;
+
+        // Set flags accordingly
+        self.set_flag(Flags6502::B, false);
+        self.set_flag(Flags6502::U, true);
+        self.set_flag(Flags6502::I, true);
+
+        // Save the status register to stack
+        self.write(STACK_POINTER_BASE + self.stkp, self.status.bits());
+        self.stkp -= 1;
+
+        // The value of the new program counter sits at this hardcoded address
+        self.addr_abs = NMI_PROGRAM_COUNTER;
+        let lo = self.read(self.addr_abs + 0) as u16;
+        let hi = self.read(self.addr_abs + 1) as u16;
+        self.pc = (hi << 8) | lo;
+
+        // Interrupts take time
+        self.cycles = 7;
+    }
+
+    /// Return from an interrupt
+    fn rti(&mut self) -> bool {
+        self.stkp += 1;
+        // Read status from the stack
+        self.status = Flags6502::from_bits(self.read(STACK_POINTER_BASE + self.stkp)).unwrap();
+        self.status &= !Flags6502::B;
+        self.status &= !Flags6502::U;
+
+        // Read the program counter from stack
+        stkp += 1;
+        self.pc = self.read(STACK_POINTER_BASE + self.stkp) as u16;
+        stkp += 1;
+        self.pc |= (self.read(STACK_POINTER_BASE + self.stkp) as u16) << 8;
+        false
+    }
 
     /// Fetches data from the given address
     fn fetch(&mut self) -> u8 {
