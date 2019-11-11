@@ -465,8 +465,23 @@ impl Cpu6502 {
         true
     }
 
+    /// Arithmetic left shift
+    /// If Addressing mode is Implied, then the accumulator is shifted
+    /// Otherwise, the value at the memory location is shifted and written back
+    fn ASL(&mut self) -> bool {
+        self.fetch();
+        let temp = (self.fetched as u16) << 1;
+        self.set_flag(Flags6502::C, (temp & 0xFF00) > 0);
+        self.set_flag(Flags6502::Z, (temp & 0x00FF) == 0);
+        self.set_flag(Flags6502::N, (temp & 0x80) > 0);
+        if LOOKUP[self.opcode] as usize == Self::IMP as usize {
+            self.a = (temp & 0x00FF) as u8;
+        } else {
+            self.write(self.addr_abs, (temp & 0x00FF) as u8);
+        }
 
-    fn ASL(&mut self) -> bool { false }
+        false
+    }
 
     /// Branch if the carry flag of the status register is clear
     fn BCC(&mut self) -> bool {
@@ -532,8 +547,18 @@ impl Cpu6502 {
         false
     }
 
+    /// I have no idea what this instruction is for
+    fn BIT(&mut self) -> bool {
+        self.fetch();
+        let temp = self.a & self.fetched;
+        self.set_flag(Flags6502::Z, (temp & 0x00FF) == 0x00);
+        self.set_flag(Flags6502::N, (fetched & (1 << 7)) > 0);
+        self.set_flag(Flags6502::V, (fetched & (1 << 6)) > 0);
 
-    fn BIT(&mut self) -> bool { false }
+        false
+    }
+
+
     fn BRK(&mut self) -> bool { false }
 
     /// Clear Carry flag
