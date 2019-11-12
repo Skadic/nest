@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::bus::Bus;
+use bitflags::_core::num::Wrapping;
 
 
 bitflags! {
@@ -439,8 +440,8 @@ impl Cpu6502 {
     /// As a result, the formula that fulfills this truth table is V = (A ^ R) & (M ^ R)
     fn ADC(&mut self) -> bool {
         self.fetch();
-        // Add the accumulator, the fetched data, and the carry bit
-        let temp: u16 = self.a as u16 + self.fetched as u16 + self.get_flag(Flags6502::C) as u16;
+        // Add the accumulator, the fetched data, and the carry bit (Use Wrapping, to allow overflow)
+        let temp: u16 = (Wrapping(self.a as u16) + Wrapping(self.fetched as u16) + Wrapping(self.get_flag(Flags6502::C) as u16)).0;
         // If the sum overflows, the 8-bit range, set the Carry bit
         self.set_flag(Flags6502::C, temp > 0xFF);
         // If the result of the sum (within 8-bit range) is Zero, set the Zero flag
@@ -611,7 +612,8 @@ impl Cpu6502 {
     /// N <- (acc - mem) < 0 (as in: the sign is 1)
     fn CMP(&mut self) -> bool { 
         self.fetch();
-        let value = self.a as u16 - self.fetched as u16;
+        // Make Rust allow overflow/underflow
+        let value = (Wrapping(self.a as u16) - Wrapping(self.fetched as u16)).0;
         self.set_flag(Flags6502::C, self.a >= self.fetched);
         self.set_flag(Flags6502::Z, (value & 0x00FF) == 0);
         self.set_flag(Flags6502::N, (value & 0x0080) > 0);
@@ -916,10 +918,10 @@ impl Cpu6502 {
         self.fetch();
 
         // Invert M
-        let value = (self.fetched as u16) ^ 0x00FF;
+        let value = Wrapping((self.fetched as u16) ^ 0x00FF);
 
         // Add just like in ADC
-        let temp: u16 = self.a as u16 + value + self.get_flag(Flags6502::C) as u16;
+        let temp: u16 = (Wrapping(self.a as u16) + value + Wrapping(self.get_flag(Flags6502::C) as u16)).0;
         self.set_flag(Flags6502::C, temp > 0xFF);
         self.set_flag(Flags6502::Z, (temp & 0x00FF) == 0);
         self.set_flag(Flags6502::N, (temp & 0x80) > 0);
@@ -1102,7 +1104,7 @@ pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
 #[allow(non_snake_case)]
 #[cfg(test)]
 mod test {
-    use crate::cpu6502::Cpu6502;
+    use crate::cpu6502::{Cpu6502, IRQ_PROGRAM_COUNTER, STACK_POINTER_BASE};
     use crate::cpu6502::Flags6502;
     
     use std::rc::Rc;
@@ -1120,7 +1122,6 @@ mod test {
         assert_eq!(cpu.status, Flags6502::C | Flags6502::I);
     }
 
-    
     #[test]
     fn ADC_test() {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
@@ -1189,6 +1190,216 @@ mod test {
     }
 
     #[test]
+    fn BCC_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.pc = 200;
+        cpu.addr_rel = 100;
+        cpu.set_flag(Flags6502::C, true);
+        cpu.BCC();
+        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
+        cpu.set_flag(Flags6502::C, false);
+        cpu.BCC();
+        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being clear");
+    }
+
+    #[test]
+    fn BCS_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.pc = 200;
+        cpu.addr_rel = 100;
+        cpu.set_flag(Flags6502::C, false);
+        cpu.BCS();
+        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being set");
+        cpu.set_flag(Flags6502::C, true);
+        cpu.BCS();
+        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being set");
+    }
+
+    #[test]
+    fn BEQ_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.pc = 200;
+        cpu.addr_rel = 100;
+        cpu.set_flag(Flags6502::Z, false);
+        cpu.BEQ();
+        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being set");
+        cpu.set_flag(Flags6502::Z, true);
+        cpu.BEQ();
+        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being set");
+    }
+
+    #[test]
+    fn BNE_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.pc = 200;
+        cpu.addr_rel = 100;
+        cpu.set_flag(Flags6502::Z, true);
+        cpu.BNE();
+        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
+        cpu.set_flag(Flags6502::Z, false);
+        cpu.BNE();
+        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being clear");
+    }
+
+    #[test]
+    fn BPL_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.pc = 200;
+        cpu.addr_rel = 100;
+        cpu.set_flag(Flags6502::N, true);
+        cpu.BPL();
+        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
+        cpu.set_flag(Flags6502::N, false);
+        cpu.BPL();
+        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being clear");
+    }
+
+    #[test]
+    fn BMI_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.pc = 200;
+        cpu.addr_rel = 100;
+        cpu.set_flag(Flags6502::N, false);
+        cpu.BMI();
+        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being set");
+        cpu.set_flag(Flags6502::N, true);
+        cpu.BMI();
+        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being set");
+    }
+
+    #[test]
+    fn BVC_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.pc = 200;
+        cpu.addr_rel = 100;
+        cpu.set_flag(Flags6502::V, false);
+        cpu.BVC();
+        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being set");
+        cpu.set_flag(Flags6502::V, true);
+        cpu.BVC();
+        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being set");
+    }
+
+    #[test]
+    fn BVS_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.pc = 200;
+        cpu.addr_rel = 100;
+        cpu.set_flag(Flags6502::V, true);
+        cpu.BVS();
+        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
+        cpu.set_flag(Flags6502::V, false);
+        cpu.BVS();
+        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being clear");
+    }
+
+    #[test]
+    fn BIT_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.addr_abs = 0x1111;
+        cpu.write(cpu.addr_abs, 0xFF);
+        cpu.BIT();
+
+        assert_eq!(cpu.status, Flags6502::Z | Flags6502::N | Flags6502::V, "Status does not match")
+    }
+
+    #[test]
+    fn BRK_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        // Write lo of the jump address
+        cpu.write(IRQ_PROGRAM_COUNTER, 0x20);
+        // Write hi of the jump adress
+        cpu.write(IRQ_PROGRAM_COUNTER + 1, 0x10);
+        // The current program counter (pc + 1 will be written to memory)
+        cpu.pc = 0x1233;
+
+        cpu.status = Flags6502::N | Flags6502::Z;
+
+        cpu.BRK();
+
+        assert_eq!(Flags6502::from_bits(cpu.read(STACK_POINTER_BASE + cpu.stkp + 1)).unwrap(), Flags6502::N | Flags6502::Z | Flags6502::B | Flags6502::I);
+        assert_eq!(cpu.read(STACK_POINTER_BASE + cpu.stkp + 2), 0x34, "lo nibble of pc incorrect");
+        assert_eq!(cpu.read(STACK_POINTER_BASE + cpu.stkp + 3), 0x12, "hi nibble of pc incorrect");
+        assert_eq!(cpu.pc, 0x1020, "new jump address incorrect");
+    }
+
+    #[test]
+    fn clear_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        cpu.status = Flags6502::C | Flags6502::D | Flags6502::I | Flags6502::V;
+
+        cpu.CLC();
+        assert_eq!(cpu.status, Flags6502::D | Flags6502::I | Flags6502::V);
+        cpu.CLD();
+        assert_eq!(cpu.status, Flags6502::I | Flags6502::V);
+        cpu.CLI();
+        assert_eq!(cpu.status, Flags6502::V);
+        cpu.CLV();
+        assert_eq!(cpu.status, Flags6502::empty());
+    }
+
+    #[test]
+    fn CMP_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        cpu.addr_abs = 0x1111;
+
+        // Random opcode, that has absolute addressing
+        cpu.opcode = 0x0E;
+
+        // Test acc greater
+        cpu.write(0x1111, 10);
+        cpu.a = 20;
+        cpu.CMP();
+        assert_eq!(cpu.status, Flags6502::C);
+
+        // Test acc equal to memory
+        cpu.write(0x1111, 10);
+        cpu.a = 10;
+        cpu.CMP();
+        assert_eq!(cpu.status, Flags6502::C | Flags6502::Z);
+
+        // Test acc lesser than memory
+        cpu.write(0x1111, 10);
+        cpu.a = 0;
+        cpu.CMP();
+        assert_eq!(cpu.status, Flags6502::N);
+    }
+
+    #[test]
     fn TAX_test() {
         let mut cpu = Cpu6502::new();
         cpu.a = 5;
@@ -1196,7 +1407,6 @@ mod test {
         assert_eq!(cpu.x, cpu.a);
         assert_eq!(cpu.status, Flags6502::empty());
     }
-
 
     #[test]
     fn TAY_test() {
