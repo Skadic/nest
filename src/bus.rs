@@ -1,6 +1,7 @@
 use crate::cpu6502::Cpu6502;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::fmt::Debug;
 
 const RAM_SIZE: usize = 64 * 1024;
 
@@ -31,5 +32,11 @@ impl Bus {
 
     pub fn read(&self, addr: u16, _read_only: bool) -> u8 {
         self.ram[addr as usize]
+    }
+}
+
+impl Debug for Bus {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(fmt, "bus")
     }
 }

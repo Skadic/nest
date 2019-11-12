@@ -46,6 +46,7 @@ lazy_static! {
 }
 
 
+#[derive(Debug)]
 pub struct Cpu6502 {
     bus: Option<Rc<RefCell<Bus>>>,
     a: u8, // Accumulator Register
@@ -71,7 +72,7 @@ impl Cpu6502 {
             a: 0,
             x: 0,
             y: 0,
-            stkp: 0,
+            stkp: STACK_POINTER_BASE,
             pc: 0,
             status: Flags6502::empty(),
             fetched: 0,
@@ -106,7 +107,7 @@ impl Cpu6502 {
         };
     }
 
-    fn clock(&mut self) {
+    pub fn clock(&mut self) {
         if self.cycles == 0 {
 
             // Read the next opcode from the memory at the program counter
@@ -1057,6 +1058,45 @@ impl Instruction {
     }
 }
 
+
+pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
+
+    fn cmp_fn(f1: fn(&mut Cpu6502) -> bool, f2: fn(&mut Cpu6502) -> bool) -> bool {
+        f1 as usize == f2 as usize
+    }
+
+    let mut program: Vec<String> = Vec::new();
+
+    let mut i = 0;
+    while i < program_bytes.len() {
+        let mut string_instr_tokens: Vec<String> = Vec::new();
+
+        let instruction = &LOOKUP[program_bytes[i] as usize];
+        let mode = |addr_mode: fn(&mut Cpu6502) -> bool| cmp_fn(instruction.addrmode, addr_mode);
+        string_instr_tokens.push(instruction.name.clone());
+        if mode(Cpu6502::IMP) {}
+        else if mode(Cpu6502::IMM) {
+            i += 1;
+            string_instr_tokens.push(format!("#${:0>4}", hex::encode(vec![program_bytes[i]])))
+        } else if mode(Cpu6502::ZP0) || mode(Cpu6502::ZPX) || mode(Cpu6502::ZPY) || mode(Cpu6502::REL) {
+            i += 1;
+            string_instr_tokens.push(format!("${:0>4}", hex::encode(vec![program_bytes[i]])))    
+        } else {
+            let mut address = Vec::new();
+            i += 1;    
+            address.push(program_bytes[i]);
+            i += 1;
+            address.push(program_bytes[i]);
+            string_instr_tokens.push(format!("${:0>4}", hex::encode(address)));
+        }
+
+        println!("{}", string_instr_tokens.join(" "));
+        program.push(string_instr_tokens.join(" "));
+        i += 1;
+    }
+
+    program
+}
 
 
 #[cfg(test)]
