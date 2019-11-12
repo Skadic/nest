@@ -222,9 +222,9 @@ impl Cpu6502 {
         self.status &= !Flags6502::U;
 
         // Read the program counter from stack
-        stkp += 1;
+        self.stkp += 1;
         self.pc = self.read(STACK_POINTER_BASE + self.stkp) as u16;
-        stkp += 1;
+        self.stkp += 1;
         self.pc |= (self.read(STACK_POINTER_BASE + self.stkp) as u16) << 8;
         false
     }
@@ -474,7 +474,7 @@ impl Cpu6502 {
         self.set_flag(Flags6502::C, (temp & 0xFF00) > 0);
         self.set_flag(Flags6502::Z, (temp & 0x00FF) == 0);
         self.set_flag(Flags6502::N, (temp & 0x80) > 0);
-        if LOOKUP[self.opcode] as usize == Self::IMP as usize {
+        if LOOKUP[self.opcode as usize].addrmode as usize == Self::IMP as usize {
             self.a = (temp & 0x00FF) as u8;
         } else {
             self.write(self.addr_abs, (temp & 0x00FF) as u8);
@@ -552,14 +552,14 @@ impl Cpu6502 {
         self.fetch();
         let temp = self.a & self.fetched;
         self.set_flag(Flags6502::Z, (temp & 0x00FF) == 0x00);
-        self.set_flag(Flags6502::N, (fetched & (1 << 7)) > 0);
-        self.set_flag(Flags6502::V, (fetched & (1 << 6)) > 0);
+        self.set_flag(Flags6502::N, (self.fetched & (1 << 7)) > 0);
+        self.set_flag(Flags6502::V, (self.fetched & (1 << 6)) > 0);
 
         false
     }
 
 
-    fn BRK(&mut self) -> bool { false }
+    fn BRK(&mut self) -> bool { unimplemented!() }
 
     /// Clear Carry flag
     fn CLC(&mut self) -> bool {
@@ -585,34 +585,184 @@ impl Cpu6502 {
         false
     }
 
-    fn CMP(&mut self) -> bool { false }
-    fn CPX(&mut self) -> bool { false }
-    fn CPY(&mut self) -> bool { false }
-    fn DEC(&mut self) -> bool { false }
+    /// Compares the accumulator to memory
+    /// Operation:  
+    /// C <- acc >= mem  
+    /// Z <- (acc - mem) == 0  
+    /// N <- (acc - mem) < 0 (as in: the sign is 1)
+    fn CMP(&mut self) -> bool { 
+        self.fetch();
+        let value = self.a as u16 - self.fetched as u16;
+        self.set_flag(Flags6502::C, self.a >= self.fetched);
+        self.set_flag(Flags6502::Z, (value & 0x00FF) == 0);
+        self.set_flag(Flags6502::N, (value & 0x0080) > 0);
+        true
+    }
+
+    /// Compares the X-register to memory
+    /// Operation:  
+    /// C <- x >= mem  
+    /// Z <- (x - mem) == 0  
+    /// N <- (x - mem) < 0 (as in: the sign is 1)
+    fn CPX(&mut self) -> bool { 
+        self.fetch();
+        let value = self.x as u16 - self.fetched as u16;
+        self.set_flag(Flags6502::C, self.x >= self.fetched);
+        self.set_flag(Flags6502::Z, (value & 0x00FF) == 0);
+        self.set_flag(Flags6502::N, (value & 0x0080) > 0);
+        false    
+    }
+
+    /// Compares the Y-register to memory
+    /// Operation:  
+    /// C <- y >= mem  
+    /// Z <- (y - mem) == 0  
+    /// N <- (y - mem) < 0 (as in: the sign is 1)
+    fn CPY(&mut self) -> bool { 
+        self.fetch();
+        let value = self.y as u16 - self.fetched as u16;
+        self.set_flag(Flags6502::C, self.y >= self.fetched);
+        self.set_flag(Flags6502::Z, (value & 0x00FF) == 0);
+        self.set_flag(Flags6502::N, (value & 0x0080) > 0);
+        false    
+    }
+
+    /// Decrement value at memory location
+    fn DEC(&mut self) -> bool {
+        self.fetch();
+        
+        let value = self.fetched - 1;
+        self.write(self.addr_abs, value);
+
+        self.set_flag(Flags6502::Z, value == 0);
+        self.set_flag(Flags6502::N, (value & 0x80) > 0);
+        
+        false
+    }
 
     /// Decrements the X-register by 1
     fn DEX(&mut self) -> bool {
         self.x -= 1;
+        self.set_flag(Flags6502::Z, self.x == 0);
+        self.set_flag(Flags6502::N, (self.x & 0x80) > 0);
         false
     }
 
     /// Decrements the Y register by 1
     fn DEY(&mut self) -> bool {
         self.y -= 1;
+        self.set_flag(Flags6502::Z, self.y == 0);
+        self.set_flag(Flags6502::N, (self.y & 0x80) > 0);
         false
     }
-    fn EOR(&mut self) -> bool { false }
-    fn INC(&mut self) -> bool { false }
-    fn INX(&mut self) -> bool { false }
-    fn INY(&mut self) -> bool { false }
-    fn JMP(&mut self) -> bool { false }
-    fn JSR(&mut self) -> bool { false }
-    fn LDA(&mut self) -> bool { false }
-    fn LDX(&mut self) -> bool { false }
-    fn LDY(&mut self) -> bool { false }
-    fn LSR(&mut self) -> bool { false }
-    fn NOP(&mut self) -> bool { false }
-    fn ORA(&mut self) -> bool { false }
+
+    /// Exclusive or of memory with accumulator
+    fn EOR(&mut self) -> bool {
+        self.fetch();
+        self.a ^= self.fetched;
+        self.set_flag(Flags6502::Z, self.a == 0);
+        self.set_flag(Flags6502::N, (self.a & 0x80) > 0);
+        true
+    }
+
+    /// Increments memory location by 1
+    fn INC(&mut self) -> bool { 
+        self.fetch();
+        
+        let value = self.fetched + 1;
+        self.write(self.addr_abs, value);
+        
+        self.set_flag(Flags6502::Z, value == 0);
+        self.set_flag(Flags6502::N, (value & 0x80) > 0);
+        
+        false
+    }
+
+
+    /// Increments the X-register by 1
+    fn INX(&mut self) -> bool {
+        self.x += 1;
+        self.set_flag(Flags6502::Z, self.x == 0);
+        self.set_flag(Flags6502::N, (self.x & 0x80) > 0);
+        false
+    }
+
+    /// Increments the Y register by 1
+    fn INY(&mut self) -> bool {
+        self.y += 1;
+        self.set_flag(Flags6502::Z, self.y == 0);
+        self.set_flag(Flags6502::N, (self.y & 0x80) > 0);
+        false
+    }
+
+    /// Jump to memory location without saving return address
+    fn JMP(&mut self) -> bool {
+        self.pc = self.addr_abs;
+        false
+    }
+
+    /// Jump to memory location *with* saving return address
+    fn JSR(&mut self) -> bool { 
+        
+        // Write current program counter to stack
+        self.pc -= 1;
+        self.write(STACK_POINTER_BASE + self.stkp, (self.pc >> 8) as u8);
+        self.stkp -= 1;
+        self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
+        self.stkp -= 1;
+
+        // Jump to new address
+        self.pc = self.addr_abs;
+        false
+    }
+
+    /// Load accumulator from memory
+    fn LDA(&mut self) -> bool { 
+        self.fetch();
+        self.a = self.fetched;
+        self.set_flag(Flags6502::Z, self.a == 0);
+        self.set_flag(Flags6502::N, (self.a & 0x80) > 0);
+        true
+    }
+
+    /// Load X register from memory
+    fn LDX(&mut self) -> bool { 
+        self.fetch();
+        self.x = self.fetched;
+        self.set_flag(Flags6502::Z, self.x == 0);
+        self.set_flag(Flags6502::N, (self.x & 0x80) > 0);
+        true
+    }
+
+    /// Load Y register from memory
+    fn LDY(&mut self) -> bool {
+        self.fetch();
+        self.y = self.fetched;
+        self.set_flag(Flags6502::Z, self.y == 0);
+        self.set_flag(Flags6502::N, (self.y & 0x80) > 0);
+        true
+    }
+    
+    /// Shift memory or accumulator 1 bit right
+    fn LSR(&mut self) -> bool {
+        self.fetch();
+
+        let value = self.fetched >> 1;
+        self.set_flag(Flags6502::N, false); // Fist bit will always be zero
+        self.set_flag(Flags6502::Z, value == 0);
+        self.set_flag(Flags6502::C, self.fetched & 1 > 0); // If 1 bit is lost by shifting right
+
+        if LOOKUP[self.opcode as usize].addrmode as usize == Self::IMP as usize {
+            self.a = value;
+        } else {
+            self.write(self.addr_abs, value);
+        }
+
+        false
+    }
+    
+    fn NOP(&mut self) -> bool { unimplemented!() }
+    fn ORA(&mut self) -> bool { unimplemented!() }
 
     // Push accumulator to the stack
     fn PHA(&mut self) -> bool {
@@ -621,7 +771,7 @@ impl Cpu6502 {
         false
     }
 
-    fn PHP(&mut self) -> bool { false }
+    fn PHP(&mut self) -> bool { unimplemented!() }
 
     // Pop off the stack into the accumulator
     fn PLA(&mut self) -> bool {
@@ -632,11 +782,11 @@ impl Cpu6502 {
         false
     }
 
-    fn PLP(&mut self) -> bool { false }
-    fn ROL(&mut self) -> bool { false }
-    fn ROR(&mut self) -> bool { false }
-    fn RTI(&mut self) -> bool { false }
-    fn RTS(&mut self) -> bool { false }
+    fn PLP(&mut self) -> bool { unimplemented!() }
+    fn ROL(&mut self) -> bool { unimplemented!() }
+    fn ROR(&mut self) -> bool { unimplemented!() }
+    fn RTI(&mut self) -> bool { unimplemented!() }
+    fn RTS(&mut self) -> bool { unimplemented!() }
 
     /// Subtraction of the fetched value from the accumulator with carry bit (which is a borrow bit in this case)
     /// The Operation is `A = A - M - (1 - C)`
@@ -663,21 +813,21 @@ impl Cpu6502 {
         true
     }
 
-    fn SEC(&mut self) -> bool { false }
-    fn SED(&mut self) -> bool { false }
-    fn SEI(&mut self) -> bool { false }
-    fn STA(&mut self) -> bool { false }
-    fn STX(&mut self) -> bool { false }
-    fn STY(&mut self) -> bool { false }
-    fn TAX(&mut self) -> bool { false }
-    fn TAY(&mut self) -> bool { false }
-    fn TSX(&mut self) -> bool { false }
-    fn TXA(&mut self) -> bool { false }
-    fn TXS(&mut self) -> bool { false }
-    fn TYA(&mut self) -> bool { false }
+    fn SEC(&mut self) -> bool { unimplemented!() }
+    fn SED(&mut self) -> bool { unimplemented!() }
+    fn SEI(&mut self) -> bool { unimplemented!() }
+    fn STA(&mut self) -> bool { unimplemented!() }
+    fn STX(&mut self) -> bool { unimplemented!() }
+    fn STY(&mut self) -> bool { unimplemented!() }
+    fn TAX(&mut self) -> bool { unimplemented!() }
+    fn TAY(&mut self) -> bool { unimplemented!() }
+    fn TSX(&mut self) -> bool { unimplemented!() }
+    fn TXA(&mut self) -> bool { unimplemented!() }
+    fn TXS(&mut self) -> bool { unimplemented!() }
+    fn TYA(&mut self) -> bool { unimplemented!() }
 
     // Illegal Opcode
-    fn XXX(&mut self) -> bool { false }
+    fn XXX(&mut self) -> bool { unimplemented!() }
 
     /// Branch method, because all branches *basically* work the same, just with different branch conditions
     fn branch(&mut self) {
