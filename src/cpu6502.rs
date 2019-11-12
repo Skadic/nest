@@ -474,7 +474,7 @@ impl Cpu6502 {
         self.set_flag(Flags6502::C, (temp & 0xFF00) > 0);
         self.set_flag(Flags6502::Z, (temp & 0x00FF) == 0);
         self.set_flag(Flags6502::N, (temp & 0x80) > 0);
-        if LOOKUP[self.opcode as usize].addrmode as usize == Self::IMP as usize {
+        if self.is_implied() {
             self.a = (temp & 0x00FF) as u8;
         } else {
             self.write(self.addr_abs, (temp & 0x00FF) as u8);
@@ -558,8 +558,25 @@ impl Cpu6502 {
         false
     }
 
+    /// Force Break
+    /// Program sourced interrupt
+    fn BRK(&mut self) -> bool {
+        self.pc += 1;
 
-    fn BRK(&mut self) -> bool { unimplemented!() }
+        self.set_flag(Flags6502::I, true);
+        self.write(STACK_POINTER_BASE + self.stkp, (self.pc >> 8) as u8);
+        self.stkp -= 1;
+        self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
+        self.stkp -= 1;
+
+        self.set_flag(Flags6502::B, true);
+        self.write(STACK_POINTER_BASE + self.stkp, self.status.bits());
+        self.stkp -= 1;
+        self.set_flag(Flags6502::B, false);
+        
+        self.pc = self.read(IRQ_PROGRAM_COUNTER) as u16 | ((self.read(IRQ_PROGRAM_COUNTER + 1) as u16) << 8);
+        false
+    }
 
     /// Clear Carry flag
     fn CLC(&mut self) -> bool {
@@ -752,7 +769,7 @@ impl Cpu6502 {
         self.set_flag(Flags6502::Z, value == 0);
         self.set_flag(Flags6502::C, self.fetched & 1 > 0); // If 1 bit is lost by shifting right
 
-        if LOOKUP[self.opcode as usize].addrmode as usize == Self::IMP as usize {
+        if self.is_implied() {
             self.a = value;
         } else {
             self.write(self.addr_abs, value);
@@ -761,8 +778,18 @@ impl Cpu6502 {
         false
     }
     
-    fn NOP(&mut self) -> bool { unimplemented!() }
-    fn ORA(&mut self) -> bool { unimplemented!() }
+    /// No operation
+    fn NOP(&mut self) -> bool { false }
+
+    /// Or memory with accumulator
+    fn ORA(&mut self) -> bool { 
+        self.fetch();
+        self.a |= self.fetched;
+
+        self.set_flag(Flags6502::N, (self.a & 0x80) > 0);
+        self.set_flag(Flags6502::Z, self.a == 0);
+        true
+    }
 
     // Push accumulator to the stack
     fn PHA(&mut self) -> bool {
@@ -771,7 +798,12 @@ impl Cpu6502 {
         false
     }
 
-    fn PHP(&mut self) -> bool { unimplemented!() }
+    /// Push processor status on stack
+    fn PHP(&mut self) -> bool {
+        self.write(STACK_POINTER_BASE + self.stkp, self.status.bits());
+        self.stkp -= 1;
+        false
+    }
 
     // Pop off the stack into the accumulator
     fn PLA(&mut self) -> bool {
@@ -782,11 +814,93 @@ impl Cpu6502 {
         false
     }
 
-    fn PLP(&mut self) -> bool { unimplemented!() }
-    fn ROL(&mut self) -> bool { unimplemented!() }
-    fn ROR(&mut self) -> bool { unimplemented!() }
-    fn RTI(&mut self) -> bool { unimplemented!() }
-    fn RTS(&mut self) -> bool { unimplemented!() }
+
+    /// Pull processor status from stack
+    fn PLP(&mut self) -> bool {
+        self.stkp += 1;
+        self.status = Flags6502::from_bits(self.read(STACK_POINTER_BASE + self.stkp)).unwrap();
+        self.set_flag(Flags6502::U, true);
+        false
+    }
+
+    /// Rotate 1 bit left (Memory or accumulator)
+    /// E.g. 100101 -> 001011
+    fn ROL(&mut self) -> bool { 
+        self.fetch();
+        
+        // Shift the fetched value to the left by 1
+        let mut value = ((self.fetched as u16) << 1);
+        // Add a 1 as the least significant bit, if a 1 was "shifted out of the 8-bit bounds"
+        value |= ((value & 0x100) > 0) as u16;
+        
+        self.set_flag(Flags6502::C, (value & 0xFF00) > 0);
+        
+        // Bring the value back to the u8 range
+        let value = (value & 0xFF) as u8;
+        
+        self.set_flag(Flags6502::Z,  value == 0);
+        self.set_flag(Flags6502::N, (value & 0x80) > 0);
+        
+        if self.is_implied() {
+            self.a = value;
+        } else {
+            self.write(self.addr_abs, value);
+        }
+
+        false
+    }
+
+    /// Rotate 1 bit right (Memory or accumulator)
+    /// E.g. 100101 -> 110010
+    fn ROR(&mut self) -> bool { 
+         self.fetch();
+        
+        // Shift the fetched value to the right by 1
+        let mut value = (self.fetched >> 1);
+        // Add a 1 as the most significant bit, if a 1 was "shifted out"
+        value |= (self.fetched & 1) << 7;
+        
+        self.set_flag(Flags6502::C, (self.fetched & 1) > 0);
+        
+        self.set_flag(Flags6502::Z,  value == 0);
+        self.set_flag(Flags6502::N, (value & 0x80) > 0);
+        
+        if self.is_implied() {
+            self.a = value;
+        } else {
+            self.write(self.addr_abs, value);
+        }
+
+        false
+    }
+
+    /// Return from interrupt.
+    /// Get the status register and the program counter from stack
+    fn RTI(&mut self) -> bool {
+        self.stkp += 1;
+        self.status = Flags6502::from_bits(self.read(STACK_POINTER_BASE + self.stkp)).unwrap();
+        self.status &= !Flags6502::B;
+        self.status &= !Flags6502::U;
+
+        self.stkp += 1;
+        let lo = self.read(STACK_POINTER_BASE + self.stkp) as u16;
+        self.stkp += 1;
+        let hi = self.read(STACK_POINTER_BASE + self.stkp) as u16;
+        self.pc = (hi << 8) | lo;
+
+        false
+    }
+
+    /// Return from Subroutine
+    /// Returns to a saved program counter after jumping there (see JSR)
+    fn RTS(&mut self) -> bool {
+        self.stkp += 1;
+        let lo = self.read(STACK_POINTER_BASE + self.stkp) as u16;
+        self.stkp += 1;
+        let hi = self.read(STACK_POINTER_BASE + self.stkp) as u16;
+        self.pc = (hi << 8) | lo;
+        false
+    }
 
     /// Subtraction of the fetched value from the accumulator with carry bit (which is a borrow bit in this case)
     /// The Operation is `A = A - M - (1 - C)`
@@ -813,21 +927,95 @@ impl Cpu6502 {
         true
     }
 
-    fn SEC(&mut self) -> bool { unimplemented!() }
-    fn SED(&mut self) -> bool { unimplemented!() }
-    fn SEI(&mut self) -> bool { unimplemented!() }
-    fn STA(&mut self) -> bool { unimplemented!() }
-    fn STX(&mut self) -> bool { unimplemented!() }
-    fn STY(&mut self) -> bool { unimplemented!() }
-    fn TAX(&mut self) -> bool { unimplemented!() }
-    fn TAY(&mut self) -> bool { unimplemented!() }
-    fn TSX(&mut self) -> bool { unimplemented!() }
-    fn TXA(&mut self) -> bool { unimplemented!() }
-    fn TXS(&mut self) -> bool { unimplemented!() }
-    fn TYA(&mut self) -> bool { unimplemented!() }
+    /// Set Carry flag
+    fn SEC(&mut self) -> bool {
+        self.set_flag(Flags6502::C, true);
+        false
+    }
+
+    /// Set Decimal flag
+    fn SED(&mut self) -> bool {
+        self.set_flag(Flags6502::C, true);
+        false
+    }
+
+    /// Set "Disable Interrupts" flag
+    fn SEI(&mut self) -> bool { 
+        self.set_flag(Flags6502::I, true);
+        false
+    }
+
+    /// Store accumulator in memory
+    fn STA(&mut self) -> bool {
+        self.write(self.addr_abs, self.a);
+        false
+    }
+
+    /// Store X register in memory
+    fn STX(&mut self) -> bool {
+        self.write(self.addr_abs, self.x);
+        false
+    }
+    
+    /// Store Y register in memory
+    fn STY(&mut self) -> bool {
+        self.write(self.addr_abs, self.a);
+        false
+    }
+
+    /// Transfer the accumulator to the X register
+    fn TAX(&mut self) -> bool {
+        self.a = self.x;
+        self.set_flag(Flags6502::Z, self.a == 0);
+        self.set_flag(Flags6502::N, (self.a & 0x80) > 0);
+
+        false
+    }
+
+    /// Transfer the accumulator to the X register
+    fn TAY(&mut self) -> bool {
+        self.a = self.y;
+        self.set_flag(Flags6502::Z, self.a == 0);
+        self.set_flag(Flags6502::N, (self.a & 0x80) > 0);
+
+        false
+    }
+    
+    /// Transfer Stack Pointer to X register
+    fn TSX(&mut self) -> bool {
+        self.x = (self.stkp & 0xFF) as u8;
+        self.set_flag(Flags6502::Z, self.x == 0);
+        self.set_flag(Flags6502::N, (self.x & 0x80) > 0);
+
+        false
+    }
+
+    /// Transfer the X register to the accumulator
+    fn TXA(&mut self) -> bool {
+        self.x = self.a;
+        self.set_flag(Flags6502::Z, self.x == 0);
+        self.set_flag(Flags6502::N, (self.x & 0x80) > 0);
+
+        false
+    }
+
+    /// Transfer the X register to the Stack Pointer register
+    fn TXS(&mut self) -> bool {
+        self.stkp = self.a as u16;
+        false
+    }
+
+    /// Transfer the Y register to the accumulator
+    fn TYA(&mut self) -> bool {
+        self.y = self.a;
+        self.set_flag(Flags6502::Z, self.y == 0);
+        self.set_flag(Flags6502::N, (self.y & 0x80) > 0);
+
+        false
+    }
 
     // Illegal Opcode
-    fn XXX(&mut self) -> bool { unimplemented!() }
+    fn XXX(&mut self) -> bool { false }
 
     /// Branch method, because all branches *basically* work the same, just with different branch conditions
     fn branch(&mut self) {
@@ -845,6 +1033,10 @@ impl Cpu6502 {
         self.pc = new_addr;
     }
 
+    /// Returns true if the current addressing mode is implied (see Cpu6502::IMP())
+    fn is_implied(&self) -> bool {
+        LOOKUP[self.opcode as usize].addrmode as usize == Self::IMP as usize
+    }
 }
 
 struct Instruction{
