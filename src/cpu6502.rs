@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::bus::Bus;
 
+
 bitflags! {
     pub struct Flags6502: u8 {
         const C = 0x01; // Carry Bit
@@ -145,7 +146,7 @@ impl Cpu6502 {
 
         // Hardcoded address that contains the address the program counter should be set to, in case of a reset
         self.addr_abs = 0xFFFC;
-        let lo = self.read(self.addr_abs + 0) as u16;
+        let lo = self.read(self.addr_abs) as u16;
         let hi = self.read(self.addr_abs + 1) as u16;
 
         self.pc = (hi << 8) | lo;
@@ -178,7 +179,7 @@ impl Cpu6502 {
 
             // The value of the new program counter sits at this hardcoded address
             self.addr_abs = IRQ_PROGRAM_COUNTER;
-            let lo = self.read(self.addr_abs + 0) as u16;
+            let lo = self.read(self.addr_abs) as u16;
             let hi = self.read(self.addr_abs + 1) as u16;
             self.pc = (hi << 8) | lo;
 
@@ -206,7 +207,7 @@ impl Cpu6502 {
 
         // The value of the new program counter sits at this hardcoded address
         self.addr_abs = NMI_PROGRAM_COUNTER;
-        let lo = self.read(self.addr_abs + 0) as u16;
+        let lo = self.read(self.addr_abs) as u16;
         let hi = self.read(self.addr_abs + 1) as u16;
         self.pc = (hi << 8) | lo;
 
@@ -351,10 +352,10 @@ impl Cpu6502 {
         // So, the lower byte overflowed and reset to zero.
         // This bug is simulated here
         if ptr_lo == 0x00FF { // Simulate page boundary hardware bug
-            self.addr_abs = ((self.read(0xFF00 & ptr) as u16) << 8) | self.read(ptr + 0) as u16
+            self.addr_abs = ((self.read(0xFF00 & ptr) as u16) << 8) | self.read(ptr) as u16
         } else { // Behave normally
             // This reads the high byte and low byte of the actual address
-            self.addr_abs = ((self.read(ptr + 1) as u16) << 8) | self.read(ptr + 0) as u16;
+            self.addr_abs = ((self.read(ptr + 1) as u16) << 8) | self.read(ptr) as u16;
         }
 
         false
@@ -966,16 +967,16 @@ impl Cpu6502 {
 
     /// Transfer the accumulator to the X register
     fn TAX(&mut self) -> bool {
-        self.a = self.x;
-        self.set_flag(Flags6502::Z, self.a == 0);
-        self.set_flag(Flags6502::N, (self.a & 0x80) > 0);
+        self.x = self.a;
+        self.set_flag(Flags6502::Z, self.x == 0);
+        self.set_flag(Flags6502::N, (self.x & 0x80) > 0);
 
         false
     }
 
     /// Transfer the accumulator to the X register
     fn TAY(&mut self) -> bool {
-        self.a = self.y;
+        self.y = self.a;
         self.set_flag(Flags6502::Z, self.a == 0);
         self.set_flag(Flags6502::N, (self.a & 0x80) > 0);
 
@@ -993,7 +994,7 @@ impl Cpu6502 {
 
     /// Transfer the X register to the accumulator
     fn TXA(&mut self) -> bool {
-        self.x = self.a;
+        self.a = self.x;
         self.set_flag(Flags6502::Z, self.x == 0);
         self.set_flag(Flags6502::N, (self.x & 0x80) > 0);
 
@@ -1002,13 +1003,13 @@ impl Cpu6502 {
 
     /// Transfer the X register to the Stack Pointer register
     fn TXS(&mut self) -> bool {
-        self.stkp = self.a as u16;
+        self.stkp = self.x as u16;
         false
     }
 
     /// Transfer the Y register to the accumulator
     fn TYA(&mut self) -> bool {
-        self.y = self.a;
+        self.a = self.y;
         self.set_flag(Flags6502::Z, self.y == 0);
         self.set_flag(Flags6502::N, (self.y & 0x80) > 0);
 
@@ -1089,8 +1090,8 @@ pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
             address.push(program_bytes[i]);
             string_instr_tokens.push(format!("${:0>4}", hex::encode(address)));
         }
-
-        println!("{}", string_instr_tokens.join(" "));
+        
+        //println!("{}", string_instr_tokens.join(" "));
         program.push(string_instr_tokens.join(" "));
         i += 1;
     }
@@ -1098,11 +1099,15 @@ pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
     program
 }
 
-
+#[allow(non_snake_case)]
 #[cfg(test)]
 mod test {
     use crate::cpu6502::Cpu6502;
     use crate::cpu6502::Flags6502;
+    
+    use std::rc::Rc;
+    use std::cell::RefCell;
+    use crate::bus;
 
     #[test]
     fn flags_test() {
@@ -1113,5 +1118,92 @@ mod test {
 
         cpu.set_flag(Flags6502::I, true);
         assert_eq!(cpu.status, Flags6502::C | Flags6502::I);
+    }
+
+    
+    #[test]
+    fn ADC_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+
+        cpu.a = 5;
+        cpu.addr_abs = 0x1111;
+        cpu.STA();
+        cpu.ADC();
+        assert_eq!(cpu.a, 10, "Addition failed");
+        assert_eq!(cpu.status, Flags6502::empty(), "Status does not match");
+
+        // Carry check
+        cpu.a = 255;
+        cpu.ADC();
+        assert_eq!(cpu.a, 4, "Addition failed");
+        assert_eq!(cpu.status, Flags6502::C, "Status does not match");
+
+        cpu.CLC();
+
+        // Overflow check. As 130 is out of the [-128, 127] range, it overflows into the negative. Thus the N flag should be set
+        cpu.a = 125;
+        cpu.ADC();
+        assert_eq!(cpu.a, 130, "Addition failed");
+        assert_eq!(cpu.status, Flags6502::V | Flags6502::N, "Status does not match");
+    }
+
+    #[test]
+    fn AND_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        cpu.a = 0b0101;
+        cpu.x = 0b0110;
+        cpu.addr_abs = 0x1111;
+
+        cpu.STX();
+        cpu.AND();
+        assert_eq!(cpu.a, 0b0100, "AND operation failed");
+        assert_eq!(cpu.status, Flags6502::empty());
+    }
+
+    #[test]
+    fn ASL_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let bus = bus::Bus::new(cpu.clone());
+        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        cpu.a = 0b1100_0110;
+        cpu.fetched = cpu.a;
+
+        // The opcode of ASL with implied addressing
+        cpu.opcode = 0x0A;
+        cpu.ASL();
+        assert_eq!(cpu.a, 0b1000_1100, "Left shift of accumulator failed: {:b} vs {:b}", cpu.a, 0b1000_1100);
+
+        // The opcode of ASL with absolute addressing (although that doesn't really matter since we're setting the address manually anyway)
+        // All that matters is that the addressing mode of the specified instruction is not 'implied'
+        cpu.opcode = 0x0E;
+        cpu.a = 0b1100_0110;
+        cpu.addr_abs = 0x1111;
+        cpu.STA();
+        cpu.ASL();
+
+        assert_eq!(bus.borrow().read(0x1111 ,false), 0b1000_1100, "Left shift in memory failed: {:b}, vs {:b}", bus.borrow().read(0x1111 ,false), 0b1000_1101);
+    }
+
+    #[test]
+    fn TAX_test() {
+        let mut cpu = Cpu6502::new();
+        cpu.a = 5;
+        cpu.TAX();
+        assert_eq!(cpu.x, cpu.a);
+        assert_eq!(cpu.status, Flags6502::empty());
+    }
+
+
+    #[test]
+    fn TAY_test() {
+        let mut cpu = Cpu6502::new();
+        cpu.a = 5;
+        cpu.TAY();
+        assert_eq!(cpu.y, cpu.a);
+        assert_eq!(cpu.status, Flags6502::empty());
     }
 }
