@@ -4,11 +4,11 @@ extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
 
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 
-mod cpu6502;
 mod bus;
+mod cpu6502;
 
 fn main() {
     let cpu = Rc::new(RefCell::new(cpu6502::Cpu6502::new()));
@@ -24,9 +24,9 @@ fn main() {
     }
 
     for _ in 0..cpu6502::disassemble(parse_program(program)).len() {
-        cpu.borrow_mut().clock()    
+        cpu.borrow_mut().clock()
     }
-    
+
     println!("{}", bus.borrow().read(0x1111, false));
     println!("{:?}", cpu.borrow());
 }

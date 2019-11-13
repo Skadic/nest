@@ -1,8 +1,7 @@
-use std::rc::Rc;
-use std::cell::RefCell;
 use crate::bus::Bus;
 use bitflags::_core::num::Wrapping;
-
+use std::cell::RefCell;
+use std::rc::Rc;
 
 bitflags! {
     pub struct Flags6502: u8 {
@@ -28,46 +27,43 @@ const NMI_PROGRAM_COUNTER: u16 = 0xFFFA;
 
 lazy_static! {
     static ref LOOKUP: [Instruction; 16 * 16] = [
-        Instruction::new("BRK", Cpu6502::BRK, Cpu6502::IMM, 7), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::IZX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 3), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::ZP0, 3), Instruction::new("ASL", Cpu6502::ASL, Cpu6502::ZP0, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("PHP", Cpu6502::PHP, Cpu6502::IMP, 3), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::IMM, 2), Instruction::new("ASL", Cpu6502::ASL, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::ABS, 4), Instruction::new("ASL", Cpu6502::ASL, Cpu6502::ABS, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6),
-        Instruction::new("BPL", Cpu6502::BPL, Cpu6502::REL, 2), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::IZY, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::ZPX, 4), Instruction::new("ASL", Cpu6502::ASL, Cpu6502::ZPX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("CLC", Cpu6502::CLC, Cpu6502::IMP, 2), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::ABY, 4), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("ORA", Cpu6502::ORA, Cpu6502::ABX, 4), Instruction::new("ASL", Cpu6502::ASL, Cpu6502::ABX, 7), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7),
-        Instruction::new("JSR", Cpu6502::JSR, Cpu6502::ABS, 6), Instruction::new("AND", Cpu6502::AND, Cpu6502::IZX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("BIT", Cpu6502::BIT, Cpu6502::ZP0, 3), Instruction::new("AND", Cpu6502::AND, Cpu6502::ZP0, 3), Instruction::new("ROL", Cpu6502::ROL, Cpu6502::ZP0, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("PLP", Cpu6502::PLP, Cpu6502::IMP, 4), Instruction::new("AND", Cpu6502::AND, Cpu6502::IMM, 2), Instruction::new("ROL", Cpu6502::ROL, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("BIT", Cpu6502::BIT, Cpu6502::ABS, 4), Instruction::new("AND", Cpu6502::AND, Cpu6502::ABS, 4), Instruction::new("ROL", Cpu6502::ROL, Cpu6502::ABS, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6),
-        Instruction::new("BMI", Cpu6502::BMI, Cpu6502::REL, 2), Instruction::new("AND", Cpu6502::AND, Cpu6502::IZY, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("AND", Cpu6502::AND, Cpu6502::ZPX, 4), Instruction::new("ROL", Cpu6502::ROL, Cpu6502::ZPX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("SEC", Cpu6502::SEC, Cpu6502::IMP, 2), Instruction::new("AND", Cpu6502::AND, Cpu6502::ABY, 4), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("AND", Cpu6502::AND, Cpu6502::ABX, 4), Instruction::new("ROL", Cpu6502::ROL, Cpu6502::ABX, 7), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7),
-        Instruction::new("RTI", Cpu6502::RTI, Cpu6502::IMP, 6), Instruction::new("EOR", Cpu6502::EOR, Cpu6502::IZX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 3), Instruction::new("EOR", Cpu6502::EOR, Cpu6502::ZP0, 3), Instruction::new("LSR", Cpu6502::LSR, Cpu6502::ZP0, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("PHA", Cpu6502::PHA, Cpu6502::IMP, 3), Instruction::new("EOR", Cpu6502::EOR, Cpu6502::IMM, 2), Instruction::new("LSR", Cpu6502::LSR, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("JMP", Cpu6502::JMP, Cpu6502::ABS, 3), Instruction::new("EOR", Cpu6502::EOR, Cpu6502::ABS, 4), Instruction::new("LSR", Cpu6502::LSR, Cpu6502::ABS, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6),
-        Instruction::new("BVC", Cpu6502::BVC, Cpu6502::REL, 2), Instruction::new("EOR", Cpu6502::EOR, Cpu6502::IZY, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("EOR", Cpu6502::EOR, Cpu6502::ZPX, 4), Instruction::new("LSR", Cpu6502::LSR, Cpu6502::ZPX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("CLI", Cpu6502::CLI, Cpu6502::IMP, 2), Instruction::new("EOR", Cpu6502::EOR, Cpu6502::ABY, 4), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("EOR", Cpu6502::EOR, Cpu6502::ABX, 4), Instruction::new("LSR", Cpu6502::LSR, Cpu6502::ABX, 7), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7),
-        Instruction::new("RTS", Cpu6502::RTS, Cpu6502::IMP, 6), Instruction::new("ADC", Cpu6502::ADC, Cpu6502::IZX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 3), Instruction::new("ADC", Cpu6502::ADC, Cpu6502::ZP0, 3), Instruction::new("ROR", Cpu6502::ROR, Cpu6502::ZP0, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("PLA", Cpu6502::PLA, Cpu6502::IMP, 4), Instruction::new("ADC", Cpu6502::ADC, Cpu6502::IMM, 2), Instruction::new("ROR", Cpu6502::ROR, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("JMP", Cpu6502::JMP, Cpu6502::IND, 5), Instruction::new("ADC", Cpu6502::ADC, Cpu6502::ABS, 4), Instruction::new("ROR", Cpu6502::ROR, Cpu6502::ABS, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6),
-        Instruction::new("BVS", Cpu6502::BVS, Cpu6502::REL, 2), Instruction::new("ADC", Cpu6502::ADC, Cpu6502::IZY, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("ADC", Cpu6502::ADC, Cpu6502::ZPX, 4), Instruction::new("ROR", Cpu6502::ROR, Cpu6502::ZPX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("SEI", Cpu6502::SEI, Cpu6502::IMP, 2), Instruction::new("ADC", Cpu6502::ADC, Cpu6502::ABY, 4), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("ADC", Cpu6502::ADC, Cpu6502::ABX, 4), Instruction::new("ROR", Cpu6502::ROR, Cpu6502::ABX, 7), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7),
-        Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("STA", Cpu6502::STA, Cpu6502::IZX, 6), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("STY", Cpu6502::STY, Cpu6502::ZP0, 3), Instruction::new("STA", Cpu6502::STA, Cpu6502::ZP0, 3), Instruction::new("STX", Cpu6502::STX, Cpu6502::ZP0, 3), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 3), Instruction::new("DEY", Cpu6502::DEY, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("TXA", Cpu6502::TXA, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("STY", Cpu6502::STY, Cpu6502::ABS, 4), Instruction::new("STA", Cpu6502::STA, Cpu6502::ABS, 4), Instruction::new("STX", Cpu6502::STX, Cpu6502::ABS, 4), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 4),
-        Instruction::new("BCC", Cpu6502::BCC, Cpu6502::REL, 2), Instruction::new("STA", Cpu6502::STA, Cpu6502::IZY, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("STY", Cpu6502::STY, Cpu6502::ZPX, 4), Instruction::new("STA", Cpu6502::STA, Cpu6502::ZPX, 4), Instruction::new("STX", Cpu6502::STX, Cpu6502::ZPY, 4), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 4), Instruction::new("TYA", Cpu6502::TYA, Cpu6502::IMP, 2), Instruction::new("STA", Cpu6502::STA, Cpu6502::ABY, 5), Instruction::new("TXS", Cpu6502::TXS, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 5), Instruction::new("STA", Cpu6502::STA, Cpu6502::ABX, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5),
-        Instruction::new("LDY", Cpu6502::LDY, Cpu6502::IMM, 2), Instruction::new("LDA", Cpu6502::LDA, Cpu6502::IZX, 6), Instruction::new("LDX", Cpu6502::LDX, Cpu6502::IMM, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("LDY", Cpu6502::LDY, Cpu6502::ZP0, 3), Instruction::new("LDA", Cpu6502::LDA, Cpu6502::ZP0, 3), Instruction::new("LDX", Cpu6502::LDX, Cpu6502::ZP0, 3), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 3), Instruction::new("TAY", Cpu6502::TAY, Cpu6502::IMP, 2), Instruction::new("LDA", Cpu6502::LDA, Cpu6502::IMM, 2), Instruction::new("TAX", Cpu6502::TAX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("LDY", Cpu6502::LDY, Cpu6502::ABS, 4), Instruction::new("LDA", Cpu6502::LDA, Cpu6502::ABS, 4), Instruction::new("LDX", Cpu6502::LDX, Cpu6502::ABS, 4), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 4),
-        Instruction::new("BCS", Cpu6502::BCS, Cpu6502::REL, 2), Instruction::new("LDA", Cpu6502::LDA, Cpu6502::IZY, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("LDY", Cpu6502::LDY, Cpu6502::ZPX, 4), Instruction::new("LDA", Cpu6502::LDA, Cpu6502::ZPX, 4), Instruction::new("LDX", Cpu6502::LDX, Cpu6502::ZPY, 4), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 4), Instruction::new("CLV", Cpu6502::CLV, Cpu6502::IMP, 2), Instruction::new("LDA", Cpu6502::LDA, Cpu6502::ABY, 4), Instruction::new("TSX", Cpu6502::TSX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 4), Instruction::new("LDY", Cpu6502::LDY, Cpu6502::ABX, 4), Instruction::new("LDA", Cpu6502::LDA, Cpu6502::ABX, 4), Instruction::new("LDX", Cpu6502::LDX, Cpu6502::ABY, 4), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 4),
-        Instruction::new("CPY", Cpu6502::CPY, Cpu6502::IMM, 2), Instruction::new("CMP", Cpu6502::CMP, Cpu6502::IZX, 6), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("CPY", Cpu6502::CPY, Cpu6502::ZP0, 3), Instruction::new("CMP", Cpu6502::CMP, Cpu6502::ZP0, 3), Instruction::new("DEC", Cpu6502::DEC, Cpu6502::ZP0, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("INY", Cpu6502::INY, Cpu6502::IMP, 2), Instruction::new("CMP", Cpu6502::CMP, Cpu6502::IMM, 2), Instruction::new("DEX", Cpu6502::DEX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("CPY", Cpu6502::CPY, Cpu6502::ABS, 4), Instruction::new("CMP", Cpu6502::CMP, Cpu6502::ABS, 4), Instruction::new("DEC", Cpu6502::DEC, Cpu6502::ABS, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6),
-        Instruction::new("BNE", Cpu6502::BNE, Cpu6502::REL, 2), Instruction::new("CMP", Cpu6502::CMP, Cpu6502::IZY, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("CMP", Cpu6502::CMP, Cpu6502::ZPX, 4), Instruction::new("DEC", Cpu6502::DEC, Cpu6502::ZPX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("CLD", Cpu6502::CLD, Cpu6502::IMP, 2), Instruction::new("CMP", Cpu6502::CMP, Cpu6502::ABY, 4), Instruction::new("NOP", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("CMP", Cpu6502::CMP, Cpu6502::ABX, 4), Instruction::new("DEC", Cpu6502::DEC, Cpu6502::ABX, 7), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7),
-        Instruction::new("CPX", Cpu6502::CPX, Cpu6502::IMM, 2), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::IZX, 6), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("CPX", Cpu6502::CPX, Cpu6502::ZP0, 3), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ZP0, 3), Instruction::new("INC", Cpu6502::INC, Cpu6502::ZP0, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 5), Instruction::new("INX", Cpu6502::INX, Cpu6502::IMP, 2), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::IMM, 2), Instruction::new("NOP", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::SBC, Cpu6502::IMP, 2), Instruction::new("CPX", Cpu6502::CPX, Cpu6502::ABS, 4), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ABS, 4), Instruction::new("INC", Cpu6502::INC, Cpu6502::ABS, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6),
-        Instruction::new("BEQ", Cpu6502::BEQ, Cpu6502::REL, 2), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::IZY, 5), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 8), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ZPX, 4), Instruction::new("INC", Cpu6502::INC, Cpu6502::ZPX, 6), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 6), Instruction::new("SED", Cpu6502::SED, Cpu6502::IMP, 2), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ABY, 4), Instruction::new("NOP", Cpu6502::NOP, Cpu6502::IMP, 2), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7), Instruction::new("???", Cpu6502::NOP, Cpu6502::IMP, 4), Instruction::new("SBC", Cpu6502::SBC, Cpu6502::ABX, 4), Instruction::new("INC", Cpu6502::INC, Cpu6502::ABX, 7), Instruction::new("???", Cpu6502::XXX, Cpu6502::IMP, 7),
+        Instruction::new("BRK", Olc6502::BRK, Olc6502::IMM, 7), Instruction::new("ORA", Olc6502::ORA, Olc6502::IZX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 3), Instruction::new("ORA", Olc6502::ORA, Olc6502::ZP0, 3), Instruction::new("ASL", Olc6502::ASL, Olc6502::ZP0, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("PHP", Olc6502::PHP, Olc6502::IMP, 3), Instruction::new("ORA", Olc6502::ORA, Olc6502::IMM, 2), Instruction::new("ASL", Olc6502::ASL, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("ORA", Olc6502::ORA, Olc6502::ABS, 4), Instruction::new("ASL", Olc6502::ASL, Olc6502::ABS, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), 
+        Instruction::new("BPL", Olc6502::BPL, Olc6502::REL, 2), Instruction::new("ORA", Olc6502::ORA, Olc6502::IZY, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("ORA", Olc6502::ORA, Olc6502::ZPX, 4), Instruction::new("ASL", Olc6502::ASL, Olc6502::ZPX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), Instruction::new("CLC", Olc6502::CLC, Olc6502::IMP, 2), Instruction::new("ORA", Olc6502::ORA, Olc6502::ABY, 4), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("ORA", Olc6502::ORA, Olc6502::ABX, 4), Instruction::new("ASL", Olc6502::ASL, Olc6502::ABX, 7), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), 
+        Instruction::new("JSR", Olc6502::JSR, Olc6502::ABS, 6), Instruction::new("AND", Olc6502::AND, Olc6502::IZX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("BIT", Olc6502::BIT, Olc6502::ZP0, 3), Instruction::new("AND", Olc6502::AND, Olc6502::ZP0, 3), Instruction::new("ROL", Olc6502::ROL, Olc6502::ZP0, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("PLP", Olc6502::PLP, Olc6502::IMP, 4), Instruction::new("AND", Olc6502::AND, Olc6502::IMM, 2), Instruction::new("ROL", Olc6502::ROL, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("BIT", Olc6502::BIT, Olc6502::ABS, 4), Instruction::new("AND", Olc6502::AND, Olc6502::ABS, 4), Instruction::new("ROL", Olc6502::ROL, Olc6502::ABS, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), 
+        Instruction::new("BMI", Olc6502::BMI, Olc6502::REL, 2), Instruction::new("AND", Olc6502::AND, Olc6502::IZY, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("AND", Olc6502::AND, Olc6502::ZPX, 4), Instruction::new("ROL", Olc6502::ROL, Olc6502::ZPX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), Instruction::new("SEC", Olc6502::SEC, Olc6502::IMP, 2), Instruction::new("AND", Olc6502::AND, Olc6502::ABY, 4), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("AND", Olc6502::AND, Olc6502::ABX, 4), Instruction::new("ROL", Olc6502::ROL, Olc6502::ABX, 7), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), 
+        Instruction::new("RTI", Olc6502::RTI, Olc6502::IMP, 6), Instruction::new("EOR", Olc6502::EOR, Olc6502::IZX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 3), Instruction::new("EOR", Olc6502::EOR, Olc6502::ZP0, 3), Instruction::new("LSR", Olc6502::LSR, Olc6502::ZP0, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("PHA", Olc6502::PHA, Olc6502::IMP, 3), Instruction::new("EOR", Olc6502::EOR, Olc6502::IMM, 2), Instruction::new("LSR", Olc6502::LSR, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("JMP", Olc6502::JMP, Olc6502::ABS, 3), Instruction::new("EOR", Olc6502::EOR, Olc6502::ABS, 4), Instruction::new("LSR", Olc6502::LSR, Olc6502::ABS, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), 
+        Instruction::new("BVC", Olc6502::BVC, Olc6502::REL, 2), Instruction::new("EOR", Olc6502::EOR, Olc6502::IZY, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("EOR", Olc6502::EOR, Olc6502::ZPX, 4), Instruction::new("LSR", Olc6502::LSR, Olc6502::ZPX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), Instruction::new("CLI", Olc6502::CLI, Olc6502::IMP, 2), Instruction::new("EOR", Olc6502::EOR, Olc6502::ABY, 4), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("EOR", Olc6502::EOR, Olc6502::ABX, 4), Instruction::new("LSR", Olc6502::LSR, Olc6502::ABX, 7), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), 
+        Instruction::new("RTS", Olc6502::RTS, Olc6502::IMP, 6), Instruction::new("ADC", Olc6502::ADC, Olc6502::IZX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 3), Instruction::new("ADC", Olc6502::ADC, Olc6502::ZP0, 3), Instruction::new("ROR", Olc6502::ROR, Olc6502::ZP0, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("PLA", Olc6502::PLA, Olc6502::IMP, 4), Instruction::new("ADC", Olc6502::ADC, Olc6502::IMM, 2), Instruction::new("ROR", Olc6502::ROR, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("JMP", Olc6502::JMP, Olc6502::IND, 5), Instruction::new("ADC", Olc6502::ADC, Olc6502::ABS, 4), Instruction::new("ROR", Olc6502::ROR, Olc6502::ABS, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), 
+        Instruction::new("BVS", Olc6502::BVS, Olc6502::REL, 2), Instruction::new("ADC", Olc6502::ADC, Olc6502::IZY, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("ADC", Olc6502::ADC, Olc6502::ZPX, 4), Instruction::new("ROR", Olc6502::ROR, Olc6502::ZPX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), Instruction::new("SEI", Olc6502::SEI, Olc6502::IMP, 2), Instruction::new("ADC", Olc6502::ADC, Olc6502::ABY, 4), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("ADC", Olc6502::ADC, Olc6502::ABX, 4), Instruction::new("ROR", Olc6502::ROR, Olc6502::ABX, 7), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), 
+        Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("STA", Olc6502::STA, Olc6502::IZX, 6), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), Instruction::new("STY", Olc6502::STY, Olc6502::ZP0, 3), Instruction::new("STA", Olc6502::STA, Olc6502::ZP0, 3), Instruction::new("STX", Olc6502::STX, Olc6502::ZP0, 3), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 3), Instruction::new("DEY", Olc6502::DEY, Olc6502::IMP, 2), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("TXA", Olc6502::TXA, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("STY", Olc6502::STY, Olc6502::ABS, 4), Instruction::new("STA", Olc6502::STA, Olc6502::ABS, 4), Instruction::new("STX", Olc6502::STX, Olc6502::ABS, 4), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 4), 
+        Instruction::new("BCC", Olc6502::BCC, Olc6502::REL, 2), Instruction::new("STA", Olc6502::STA, Olc6502::IZY, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), Instruction::new("STY", Olc6502::STY, Olc6502::ZPX, 4), Instruction::new("STA", Olc6502::STA, Olc6502::ZPX, 4), Instruction::new("STX", Olc6502::STX, Olc6502::ZPY, 4), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 4), Instruction::new("TYA", Olc6502::TYA, Olc6502::IMP, 2), Instruction::new("STA", Olc6502::STA, Olc6502::ABY, 5), Instruction::new("TXS", Olc6502::TXS, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 5), Instruction::new("STA", Olc6502::STA, Olc6502::ABX, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), 
+        Instruction::new("LDY", Olc6502::LDY, Olc6502::IMM, 2), Instruction::new("LDA", Olc6502::LDA, Olc6502::IZX, 6), Instruction::new("LDX", Olc6502::LDX, Olc6502::IMM, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), Instruction::new("LDY", Olc6502::LDY, Olc6502::ZP0, 3), Instruction::new("LDA", Olc6502::LDA, Olc6502::ZP0, 3), Instruction::new("LDX", Olc6502::LDX, Olc6502::ZP0, 3), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 3), Instruction::new("TAY", Olc6502::TAY, Olc6502::IMP, 2), Instruction::new("LDA", Olc6502::LDA, Olc6502::IMM, 2), Instruction::new("TAX", Olc6502::TAX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("LDY", Olc6502::LDY, Olc6502::ABS, 4), Instruction::new("LDA", Olc6502::LDA, Olc6502::ABS, 4), Instruction::new("LDX", Olc6502::LDX, Olc6502::ABS, 4), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 4), 
+        Instruction::new("BCS", Olc6502::BCS, Olc6502::REL, 2), Instruction::new("LDA", Olc6502::LDA, Olc6502::IZY, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("LDY", Olc6502::LDY, Olc6502::ZPX, 4), Instruction::new("LDA", Olc6502::LDA, Olc6502::ZPX, 4), Instruction::new("LDX", Olc6502::LDX, Olc6502::ZPY, 4), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 4), Instruction::new("CLV", Olc6502::CLV, Olc6502::IMP, 2), Instruction::new("LDA", Olc6502::LDA, Olc6502::ABY, 4), Instruction::new("TSX", Olc6502::TSX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 4), Instruction::new("LDY", Olc6502::LDY, Olc6502::ABX, 4), Instruction::new("LDA", Olc6502::LDA, Olc6502::ABX, 4), Instruction::new("LDX", Olc6502::LDX, Olc6502::ABY, 4), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 4), 
+        Instruction::new("CPY", Olc6502::CPY, Olc6502::IMM, 2), Instruction::new("CMP", Olc6502::CMP, Olc6502::IZX, 6), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("CPY", Olc6502::CPY, Olc6502::ZP0, 3), Instruction::new("CMP", Olc6502::CMP, Olc6502::ZP0, 3), Instruction::new("DEC", Olc6502::DEC, Olc6502::ZP0, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("INY", Olc6502::INY, Olc6502::IMP, 2), Instruction::new("CMP", Olc6502::CMP, Olc6502::IMM, 2), Instruction::new("DEX", Olc6502::DEX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("CPY", Olc6502::CPY, Olc6502::ABS, 4), Instruction::new("CMP", Olc6502::CMP, Olc6502::ABS, 4), Instruction::new("DEC", Olc6502::DEC, Olc6502::ABS, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), 
+        Instruction::new("BNE", Olc6502::BNE, Olc6502::REL, 2), Instruction::new("CMP", Olc6502::CMP, Olc6502::IZY, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("CMP", Olc6502::CMP, Olc6502::ZPX, 4), Instruction::new("DEC", Olc6502::DEC, Olc6502::ZPX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), Instruction::new("CLD", Olc6502::CLD, Olc6502::IMP, 2), Instruction::new("CMP", Olc6502::CMP, Olc6502::ABY, 4), Instruction::new("NOP", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("CMP", Olc6502::CMP, Olc6502::ABX, 4), Instruction::new("DEC", Olc6502::DEC, Olc6502::ABX, 7), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), 
+        Instruction::new("CPX", Olc6502::CPX, Olc6502::IMM, 2), Instruction::new("SBC", Olc6502::SBC, Olc6502::IZX, 6), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("CPX", Olc6502::CPX, Olc6502::ZP0, 3), Instruction::new("SBC", Olc6502::SBC, Olc6502::ZP0, 3), Instruction::new("INC", Olc6502::INC, Olc6502::ZP0, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 5), Instruction::new("INX", Olc6502::INX, Olc6502::IMP, 2), Instruction::new("SBC", Olc6502::SBC, Olc6502::IMM, 2), Instruction::new("NOP", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::SBC, Olc6502::IMP, 2), Instruction::new("CPX", Olc6502::CPX, Olc6502::ABS, 4), Instruction::new("SBC", Olc6502::SBC, Olc6502::ABS, 4), Instruction::new("INC", Olc6502::INC, Olc6502::ABS, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), 
+        Instruction::new("BEQ", Olc6502::BEQ, Olc6502::REL, 2), Instruction::new("SBC", Olc6502::SBC, Olc6502::IZY, 5), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 8), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("SBC", Olc6502::SBC, Olc6502::ZPX, 4), Instruction::new("INC", Olc6502::INC, Olc6502::ZPX, 6), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 6), Instruction::new("SED", Olc6502::SED, Olc6502::IMP, 2), Instruction::new("SBC", Olc6502::SBC, Olc6502::ABY, 4), Instruction::new("NOP", Olc6502::NOP, Olc6502::IMP, 2), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7), Instruction::new("???", Olc6502::NOP, Olc6502::IMP, 4), Instruction::new("SBC", Olc6502::SBC, Olc6502::ABX, 4), Instruction::new("INC", Olc6502::INC, Olc6502::ABX, 7), Instruction::new("???", Olc6502::XXX, Olc6502::IMP, 7),
     ];
 }
-
 
 #[derive(Debug)]
 pub struct Cpu6502 {
     bus: Option<Rc<RefCell<Bus>>>,
-    a: u8, // Accumulator Register
-    x: u8, // X Register
-    y: u8, // Y Register
-    stkp: u16, // Stack Pointer
-    pc: u16, // Program Counter
+    a: u8,             // Accumulator Register
+    x: u8,             // X Register
+    y: u8,             // Y Register
+    stkp: u16,         // Stack Pointer
+    pc: u16,           // Program Counter
     status: Flags6502, // Status Register
-    fetched: u8, // Fetched data for executing instruction
-    addr_abs: u16, // Absolute memory address
-    addr_rel: u16, // Relative memory address
-    opcode: u8, // Opcode of current instruction
-    cycles: u8, // Number or clock cycles left for current instruction
-
+    fetched: u8,       // Fetched data for executing instruction
+    addr_abs: u16,     // Absolute memory address
+    addr_rel: u16,     // Relative memory address
+    opcode: u8,        // Opcode of current instruction
+    cycles: u8,        // Number or clock cycles left for current instruction
 }
 
 #[allow(non_snake_case, unused)]
 impl Cpu6502 {
-
     pub fn new() -> Self {
         Cpu6502 {
             bus: None,
@@ -85,16 +81,24 @@ impl Cpu6502 {
         }
     }
 
-    pub fn connect_bus(&mut self, bus: Rc<RefCell<Bus>> ) {
+    pub fn connect_bus(&mut self, bus: Rc<RefCell<Bus>>) {
         self.bus = Some(bus);
     }
 
     fn read(&self, addr: u16) -> u8 {
-        self.bus.as_ref().expect("cpu not connected to Bus").borrow().read(addr, false)
+        self.bus
+            .as_ref()
+            .expect("cpu not connected to Bus")
+            .borrow()
+            .read(addr, false)
     }
 
     fn write(&self, addr: u16, data: u8) {
-        self.bus.as_ref().expect("cpu not connected to Bus").borrow_mut().write(addr, data)
+        self.bus
+            .as_ref()
+            .expect("cpu not connected to Bus")
+            .borrow_mut()
+            .write(addr, data)
     }
 
     pub fn get_flag(&self, flag: Flags6502) -> bool {
@@ -111,7 +115,6 @@ impl Cpu6502 {
 
     pub fn clock(&mut self) {
         if self.cycles == 0 {
-
             // Read the next opcode from the memory at the program counter
             self.opcode = self.read(self.pc);
             self.pc += 1;
@@ -164,7 +167,10 @@ impl Cpu6502 {
     fn irq(&mut self) {
         if !self.get_flag(Flags6502::I) {
             // Save the Program counter to the stack
-            self.write(STACK_POINTER_BASE + self.stkp, ((self.pc >> 8) & 0x00FF) as u8);
+            self.write(
+                STACK_POINTER_BASE + self.stkp,
+                ((self.pc >> 8) & 0x00FF) as u8,
+            );
             self.stkp -= 1;
             self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
             self.stkp -= 1;
@@ -192,7 +198,10 @@ impl Cpu6502 {
     /// Non-maskable interrupt request signal
     fn nmi(&mut self) {
         // Save the Program counter to the stack
-        self.write(STACK_POINTER_BASE + self.stkp, ((self.pc >> 8) & 0x00FF) as u8);
+        self.write(
+            STACK_POINTER_BASE + self.stkp,
+            ((self.pc >> 8) & 0x00FF) as u8,
+        );
         self.stkp -= 1;
         self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
         self.stkp -= 1;
@@ -243,11 +252,9 @@ impl Cpu6502 {
     }
 }
 
-
 // Addressing Modes. These return true if they need another clock cycle. false otherwise
 #[allow(non_snake_case, unused)]
 impl Cpu6502 {
-
     /// Implied Addressing Mode.
     /// This means either that there is no additional data is part of the instruction,
     /// or the instruction operates on the accumulator, in which case the data in the accumulator is the fetched data.
@@ -352,9 +359,11 @@ impl Cpu6502 {
         // then the most significant byte of the actual address will be fetched from xx00 instead of page XX+1.
         // So, the lower byte overflowed and reset to zero.
         // This bug is simulated here
-        if ptr_lo == 0x00FF { // Simulate page boundary hardware bug
-            self.addr_abs = ((self.read(0xFF00 & ptr) as u16) << 8) | self.read(ptr) as u16
-        } else { // Behave normally
+        if ptr_lo == 0x00FF {
+            // Simulate page boundary hardware bug
+            self.addr_abs = ((self.read(0xFF00 & ptr) as u16) << 8) | self.read(ptr) as u16;
+        } else {
+            // Behave normally
             // This reads the high byte and low byte of the actual address
             self.addr_abs = ((self.read(ptr + 1) as u16) << 8) | self.read(ptr) as u16;
         }
@@ -390,7 +399,6 @@ impl Cpu6502 {
         self.addr_abs = (hi << 8) | lo;
         self.addr_abs += self.y as u16;
 
-
         // As we could cross a page boundary by offsetting the absolute address,
         // the instruction could take another clock cycle to complete
         // This is the same check as in ABX and ABY
@@ -419,7 +427,6 @@ impl Cpu6502 {
 // They also set the flags accordingly
 #[allow(non_snake_case, unused)]
 impl Cpu6502 {
-
     /// Addition of the fetched value to the accumulator with carry bit
     /// This instruction can overflow the accumulator register if working with signed numbers and the value overflows.
     /// In that case the following truth table determines whether an overflow happened:
@@ -441,7 +448,10 @@ impl Cpu6502 {
     fn ADC(&mut self) -> bool {
         self.fetch();
         // Add the accumulator, the fetched data, and the carry bit (Use Wrapping, to allow overflow)
-        let temp: u16 = (Wrapping(self.a as u16) + Wrapping(self.fetched as u16) + Wrapping(self.get_flag(Flags6502::C) as u16)).0;
+        let temp: u16 = (Wrapping(self.a as u16)
+            + Wrapping(self.fetched as u16)
+            + Wrapping(self.get_flag(Flags6502::C) as u16))
+        .0;
         // If the sum overflows, the 8-bit range, set the Carry bit
         self.set_flag(Flags6502::C, temp > 0xFF);
         // If the result of the sum (within 8-bit range) is Zero, set the Zero flag
@@ -449,7 +459,10 @@ impl Cpu6502 {
         // If the result is (potentially) negative, check the most significant bit and set the flag accordingly
         self.set_flag(Flags6502::N, (temp & 0x80) > 0);
         // Set the overflow flag according to the determined formula
-        self.set_flag(Flags6502::V, ((self.a as u16 ^ temp) & (self.fetched as u16 ^ temp) & 0x0080) > 0);
+        self.set_flag(
+            Flags6502::V,
+            ((self.a as u16 ^ temp) & (self.fetched as u16 ^ temp) & 0x0080) > 0,
+        );
 
         self.a = (temp & 0x00FF) as u8;
         true
@@ -576,8 +589,9 @@ impl Cpu6502 {
         self.write(STACK_POINTER_BASE + self.stkp, self.status.bits());
         self.stkp -= 1;
         self.set_flag(Flags6502::B, false);
-        
-        self.pc = self.read(IRQ_PROGRAM_COUNTER) as u16 | ((self.read(IRQ_PROGRAM_COUNTER + 1) as u16) << 8);
+
+        self.pc = self.read(IRQ_PROGRAM_COUNTER) as u16
+            | ((self.read(IRQ_PROGRAM_COUNTER + 1) as u16) << 8);
         false
     }
 
@@ -610,7 +624,7 @@ impl Cpu6502 {
     /// C <- acc >= mem  
     /// Z <- (acc - mem) == 0  
     /// N <- (acc - mem) < 0 (as in: the sign is 1)
-    fn CMP(&mut self) -> bool { 
+    fn CMP(&mut self) -> bool {
         self.fetch();
         // Make Rust allow overflow/underflow
         let value = (Wrapping(self.a as u16) - Wrapping(self.fetched as u16)).0;
@@ -625,13 +639,13 @@ impl Cpu6502 {
     /// C <- x >= mem  
     /// Z <- (x - mem) == 0  
     /// N <- (x - mem) < 0 (as in: the sign is 1)
-    fn CPX(&mut self) -> bool { 
+    fn CPX(&mut self) -> bool {
         self.fetch();
         let value = self.x as u16 - self.fetched as u16;
         self.set_flag(Flags6502::C, self.x >= self.fetched);
         self.set_flag(Flags6502::Z, (value & 0x00FF) == 0);
         self.set_flag(Flags6502::N, (value & 0x0080) > 0);
-        false    
+        false
     }
 
     /// Compares the Y-register to memory
@@ -639,25 +653,25 @@ impl Cpu6502 {
     /// C <- y >= mem  
     /// Z <- (y - mem) == 0  
     /// N <- (y - mem) < 0 (as in: the sign is 1)
-    fn CPY(&mut self) -> bool { 
+    fn CPY(&mut self) -> bool {
         self.fetch();
         let value = self.y as u16 - self.fetched as u16;
         self.set_flag(Flags6502::C, self.y >= self.fetched);
         self.set_flag(Flags6502::Z, (value & 0x00FF) == 0);
         self.set_flag(Flags6502::N, (value & 0x0080) > 0);
-        false    
+        false
     }
 
     /// Decrement value at memory location
     fn DEC(&mut self) -> bool {
         self.fetch();
-        
+
         let value = self.fetched - 1;
         self.write(self.addr_abs, value);
 
         self.set_flag(Flags6502::Z, value == 0);
         self.set_flag(Flags6502::N, (value & 0x80) > 0);
-        
+
         false
     }
 
@@ -687,18 +701,17 @@ impl Cpu6502 {
     }
 
     /// Increments memory location by 1
-    fn INC(&mut self) -> bool { 
+    fn INC(&mut self) -> bool {
         self.fetch();
-        
+
         let value = self.fetched + 1;
         self.write(self.addr_abs, value);
-        
+
         self.set_flag(Flags6502::Z, value == 0);
         self.set_flag(Flags6502::N, (value & 0x80) > 0);
-        
+
         false
     }
-
 
     /// Increments the X-register by 1
     fn INX(&mut self) -> bool {
@@ -723,8 +736,7 @@ impl Cpu6502 {
     }
 
     /// Jump to memory location *with* saving return address
-    fn JSR(&mut self) -> bool { 
-        
+    fn JSR(&mut self) -> bool {
         // Write current program counter to stack
         self.pc -= 1;
         self.write(STACK_POINTER_BASE + self.stkp, (self.pc >> 8) as u8);
@@ -738,7 +750,7 @@ impl Cpu6502 {
     }
 
     /// Load accumulator from memory
-    fn LDA(&mut self) -> bool { 
+    fn LDA(&mut self) -> bool {
         self.fetch();
         self.a = self.fetched;
         self.set_flag(Flags6502::Z, self.a == 0);
@@ -747,7 +759,7 @@ impl Cpu6502 {
     }
 
     /// Load X register from memory
-    fn LDX(&mut self) -> bool { 
+    fn LDX(&mut self) -> bool {
         self.fetch();
         self.x = self.fetched;
         self.set_flag(Flags6502::Z, self.x == 0);
@@ -763,7 +775,7 @@ impl Cpu6502 {
         self.set_flag(Flags6502::N, (self.y & 0x80) > 0);
         true
     }
-    
+
     /// Shift memory or accumulator 1 bit right
     fn LSR(&mut self) -> bool {
         self.fetch();
@@ -781,12 +793,14 @@ impl Cpu6502 {
 
         false
     }
-    
+
     /// No operation
-    fn NOP(&mut self) -> bool { false }
+    fn NOP(&mut self) -> bool {
+        false
+    }
 
     /// Or memory with accumulator
-    fn ORA(&mut self) -> bool { 
+    fn ORA(&mut self) -> bool {
         self.fetch();
         self.a |= self.fetched;
 
@@ -818,7 +832,6 @@ impl Cpu6502 {
         false
     }
 
-
     /// Pull processor status from stack
     fn PLP(&mut self) -> bool {
         self.stkp += 1;
@@ -829,22 +842,22 @@ impl Cpu6502 {
 
     /// Rotate 1 bit left (Memory or accumulator)
     /// E.g. 100101 -> 001011
-    fn ROL(&mut self) -> bool { 
+    fn ROL(&mut self) -> bool {
         self.fetch();
-        
+
         // Shift the fetched value to the left by 1
         let mut value = ((self.fetched as u16) << 1);
         // Add a 1 as the least significant bit, if a 1 was "shifted out of the 8-bit bounds"
         value |= ((value & 0x100) > 0) as u16;
-        
+
         self.set_flag(Flags6502::C, (value & 0xFF00) > 0);
-        
+
         // Bring the value back to the u8 range
         let value = (value & 0xFF) as u8;
-        
-        self.set_flag(Flags6502::Z,  value == 0);
+
+        self.set_flag(Flags6502::Z, value == 0);
         self.set_flag(Flags6502::N, (value & 0x80) > 0);
-        
+
         if self.is_implied() {
             self.a = value;
         } else {
@@ -856,19 +869,19 @@ impl Cpu6502 {
 
     /// Rotate 1 bit right (Memory or accumulator)
     /// E.g. 100101 -> 110010
-    fn ROR(&mut self) -> bool { 
-         self.fetch();
-        
+    fn ROR(&mut self) -> bool {
+        self.fetch();
+
         // Shift the fetched value to the right by 1
         let mut value = (self.fetched >> 1);
         // Add a 1 as the most significant bit, if a 1 was "shifted out"
         value |= (self.fetched & 1) << 7;
-        
+
         self.set_flag(Flags6502::C, (self.fetched & 1) > 0);
-        
-        self.set_flag(Flags6502::Z,  value == 0);
+
+        self.set_flag(Flags6502::Z, value == 0);
         self.set_flag(Flags6502::N, (value & 0x80) > 0);
-        
+
         if self.is_implied() {
             self.a = value;
         } else {
@@ -908,12 +921,9 @@ impl Cpu6502 {
 
     /// Subtraction of the fetched value from the accumulator with carry bit (which is a borrow bit in this case)
     /// The Operation is `A = A - M - (1 - C)`
-    /// This can also be written as `A = A + -M + 1 + C`, so Addition Hardware can be reused
+    /// This can also be written as `A = A + -M - 1 + C`, so Addition Hardware can be reused
     ///
-    /// Code note:
-    /// I actually have no idea why M is inverted without adding the +1 here.
-    /// As -M should be equal to ~M+1, A should equal A + ~M + 2 + C, not A + ~M + C.
-    /// Idk. I'll come back to this if it doesn't work. If it works, how even?
+    /// Because -M = ~M + 1 in binary representation, A = A + -M - 1 + C = A + ~M + C
     fn SBC(&mut self) -> bool {
         self.fetch();
 
@@ -921,11 +931,15 @@ impl Cpu6502 {
         let value = Wrapping((self.fetched as u16) ^ 0x00FF);
 
         // Add just like in ADC
-        let temp: u16 = (Wrapping(self.a as u16) + value + Wrapping(self.get_flag(Flags6502::C) as u16)).0;
+        let temp: u16 =
+            (Wrapping(self.a as u16) + value + Wrapping(self.get_flag(Flags6502::C) as u16)).0;
         self.set_flag(Flags6502::C, temp > 0xFF);
         self.set_flag(Flags6502::Z, (temp & 0x00FF) == 0);
         self.set_flag(Flags6502::N, (temp & 0x80) > 0);
-        self.set_flag(Flags6502::V, ((self.a as u16 ^ temp) & (self.fetched as u16 ^ temp) & 0x0080) > 0);
+        self.set_flag(
+            Flags6502::V,
+            ((self.a as u16 ^ temp) & (self.fetched as u16 ^ temp) & 0x0080) > 0,
+        );
 
         self.a = (temp & 0x00FF) as u8;
         true
@@ -944,7 +958,7 @@ impl Cpu6502 {
     }
 
     /// Set "Disable Interrupts" flag
-    fn SEI(&mut self) -> bool { 
+    fn SEI(&mut self) -> bool {
         self.set_flag(Flags6502::I, true);
         false
     }
@@ -960,7 +974,7 @@ impl Cpu6502 {
         self.write(self.addr_abs, self.x);
         false
     }
-    
+
     /// Store Y register in memory
     fn STY(&mut self) -> bool {
         self.write(self.addr_abs, self.a);
@@ -984,7 +998,7 @@ impl Cpu6502 {
 
         false
     }
-    
+
     /// Transfer Stack Pointer to X register
     fn TSX(&mut self) -> bool {
         self.x = (self.stkp & 0xFF) as u8;
@@ -1019,7 +1033,9 @@ impl Cpu6502 {
     }
 
     // Illegal Opcode
-    fn XXX(&mut self) -> bool { false }
+    fn XXX(&mut self) -> bool {
+        false
+    }
 
     /// Branch method, because all branches *basically* work the same, just with different branch conditions
     fn branch(&mut self) {
@@ -1043,27 +1059,30 @@ impl Cpu6502 {
     }
 }
 
-struct Instruction{
+struct Instruction {
     pub name: String,
     pub operate: fn(&mut Cpu6502) -> bool,
     pub addrmode: fn(&mut Cpu6502) -> bool,
-    pub cycles: u8
+    pub cycles: u8,
 }
 
 impl Instruction {
-    pub fn new(name: &str, operate: fn(&mut Cpu6502) -> bool, addrmode: fn(&mut Cpu6502) -> bool, cycles: u8) -> Self {
+    pub fn new(
+        name: &str,
+        operate: fn(&mut Cpu6502) -> bool,
+        addrmode: fn(&mut Cpu6502) -> bool,
+        cycles: u8,
+    ) -> Self {
         Instruction {
             name: String::from(name),
             operate,
             addrmode,
-            cycles
+            cycles,
         }
     }
 }
 
-
 pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
-
     fn cmp_fn(f1: fn(&mut Cpu6502) -> bool, f2: fn(&mut Cpu6502) -> bool) -> bool {
         f1 as usize == f2 as usize
     }
@@ -1077,22 +1096,26 @@ pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
         let instruction = &LOOKUP[program_bytes[i] as usize];
         let mode = |addr_mode: fn(&mut Cpu6502) -> bool| cmp_fn(instruction.addrmode, addr_mode);
         string_instr_tokens.push(instruction.name.clone());
-        if mode(Cpu6502::IMP) {}
-        else if mode(Cpu6502::IMM) {
+        if mode(Cpu6502::IMP) {
+        } else if mode(Cpu6502::IMM) {
             i += 1;
             string_instr_tokens.push(format!("#${:0>4}", hex::encode(vec![program_bytes[i]])))
-        } else if mode(Cpu6502::ZP0) || mode(Cpu6502::ZPX) || mode(Cpu6502::ZPY) || mode(Cpu6502::REL) {
+        } else if mode(Cpu6502::ZP0)
+            || mode(Cpu6502::ZPX)
+            || mode(Cpu6502::ZPY)
+            || mode(Cpu6502::REL)
+        {
             i += 1;
-            string_instr_tokens.push(format!("${:0>4}", hex::encode(vec![program_bytes[i]])))    
+            string_instr_tokens.push(format!("${:0>4}", hex::encode(vec![program_bytes[i]])))
         } else {
             let mut address = Vec::new();
-            i += 1;    
+            i += 1;
             address.push(program_bytes[i]);
             i += 1;
             address.push(program_bytes[i]);
             string_instr_tokens.push(format!("${:0>4}", hex::encode(address)));
         }
-        
+
         //println!("{}", string_instr_tokens.join(" "));
         program.push(string_instr_tokens.join(" "));
         i += 1;
@@ -1104,12 +1127,12 @@ pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
 #[allow(non_snake_case)]
 #[cfg(test)]
 mod test {
-    use crate::cpu6502::{Cpu6502, IRQ_PROGRAM_COUNTER, STACK_POINTER_BASE};
     use crate::cpu6502::Flags6502;
-    
-    use std::rc::Rc;
-    use std::cell::RefCell;
+    use crate::cpu6502::{Cpu6502, IRQ_PROGRAM_COUNTER, STACK_POINTER_BASE};
+
     use crate::bus;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     #[test]
     fn flags_test() {
@@ -1147,7 +1170,11 @@ mod test {
         cpu.a = 125;
         cpu.ADC();
         assert_eq!(cpu.a, 130, "Addition failed");
-        assert_eq!(cpu.status, Flags6502::V | Flags6502::N, "Status does not match");
+        assert_eq!(
+            cpu.status,
+            Flags6502::V | Flags6502::N,
+            "Status does not match"
+        );
     }
 
     #[test]
@@ -1176,7 +1203,11 @@ mod test {
         // The opcode of ASL with implied addressing
         cpu.opcode = 0x0A;
         cpu.ASL();
-        assert_eq!(cpu.a, 0b1000_1100, "Left shift of accumulator failed: {:b} vs {:b}", cpu.a, 0b1000_1100);
+        assert_eq!(
+            cpu.a, 0b1000_1100,
+            "Left shift of accumulator failed: {:b} vs {:b}",
+            cpu.a, 0b1000_1100
+        );
 
         // The opcode of ASL with absolute addressing (although that doesn't really matter since we're setting the address manually anyway)
         // All that matters is that the addressing mode of the specified instruction is not 'implied'
@@ -1186,7 +1217,13 @@ mod test {
         cpu.STA();
         cpu.ASL();
 
-        assert_eq!(bus.borrow().read(0x1111 ,false), 0b1000_1100, "Left shift in memory failed: {:b}, vs {:b}", bus.borrow().read(0x1111 ,false), 0b1000_1101);
+        assert_eq!(
+            bus.borrow().read(0x1111, false),
+            0b1000_1100,
+            "Left shift in memory failed: {:b}, vs {:b}",
+            bus.borrow().read(0x1111, false),
+            0b1000_1101
+        );
     }
 
     #[test]
@@ -1202,7 +1239,10 @@ mod test {
         assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
         cpu.set_flag(Flags6502::C, false);
         cpu.BCC();
-        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being clear");
+        assert_eq!(
+            cpu.pc, 300,
+            "branch did not happen, despite flag being clear"
+        );
     }
 
     #[test]
@@ -1250,7 +1290,10 @@ mod test {
         assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
         cpu.set_flag(Flags6502::Z, false);
         cpu.BNE();
-        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being clear");
+        assert_eq!(
+            cpu.pc, 300,
+            "branch did not happen, despite flag being clear"
+        );
     }
 
     #[test]
@@ -1266,7 +1309,10 @@ mod test {
         assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
         cpu.set_flag(Flags6502::N, false);
         cpu.BPL();
-        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being clear");
+        assert_eq!(
+            cpu.pc, 300,
+            "branch did not happen, despite flag being clear"
+        );
     }
 
     #[test]
@@ -1314,7 +1360,10 @@ mod test {
         assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
         cpu.set_flag(Flags6502::V, false);
         cpu.BVS();
-        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being clear");
+        assert_eq!(
+            cpu.pc, 300,
+            "branch did not happen, despite flag being clear"
+        );
     }
 
     #[test]
@@ -1327,7 +1376,11 @@ mod test {
         cpu.write(cpu.addr_abs, 0xFF);
         cpu.BIT();
 
-        assert_eq!(cpu.status, Flags6502::Z | Flags6502::N | Flags6502::V, "Status does not match")
+        assert_eq!(
+            cpu.status,
+            Flags6502::Z | Flags6502::N | Flags6502::V,
+            "Status does not match"
+        )
     }
 
     #[test]
@@ -1347,9 +1400,20 @@ mod test {
 
         cpu.BRK();
 
-        assert_eq!(Flags6502::from_bits(cpu.read(STACK_POINTER_BASE + cpu.stkp + 1)).unwrap(), Flags6502::N | Flags6502::Z | Flags6502::B | Flags6502::I);
-        assert_eq!(cpu.read(STACK_POINTER_BASE + cpu.stkp + 2), 0x34, "lo nibble of pc incorrect");
-        assert_eq!(cpu.read(STACK_POINTER_BASE + cpu.stkp + 3), 0x12, "hi nibble of pc incorrect");
+        assert_eq!(
+            Flags6502::from_bits(cpu.read(STACK_POINTER_BASE + cpu.stkp + 1)).unwrap(),
+            Flags6502::N | Flags6502::Z | Flags6502::B | Flags6502::I
+        );
+        assert_eq!(
+            cpu.read(STACK_POINTER_BASE + cpu.stkp + 2),
+            0x34,
+            "lo nibble of pc incorrect"
+        );
+        assert_eq!(
+            cpu.read(STACK_POINTER_BASE + cpu.stkp + 3),
+            0x12,
+            "hi nibble of pc incorrect"
+        );
         assert_eq!(cpu.pc, 0x1020, "new jump address incorrect");
     }
 
