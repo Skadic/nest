@@ -30,6 +30,3 @@ after_success: |-
     cargo tarpaulin --out Xml
     bash <(curl -s https://codecov.io/bash)
   fi
-env:
-  global:
-    secure: Prfeofll122oGFXju7sNkNVgMIFbZfhjDmVZZ6VJ8cpUKWLcP8B01wFNRX4xjV8tNJHa4sUk+ulCFh5n3nFHUZKyGb/ePsj2dOdPjjQfBm2/yYyvblhJ0eSc3c3Gy/MG4MSzQYXvCgJQhUKHsJImfhofJKbDKq8HMEkM+RUJQP+T/+5YfKtninPaO2abVAb7aYC42BqB4pQXXMCHs4qgqQ2JUdAaxqL615uPJaQvOMVlz3tkho69Ute+sL3fSd3voe06/vButoeU76GhU2jLm6BfrJyoI2AOUwnziTgQ1xdNOyssI2i3Sg2QVFv4bbFG2piCizTAsh09AHx8wK5XS+FTkjIBATUktiBx6LRw4cdTgPHYu3BKmaRbt+CKnVIr/G0Y2QH4aGAmQCM4DF+vOEpalS5qDMVxQoG/+8xc4/LLhp0mxxijGmb/f9LgHq4BT09558dPUrbINI9poPL3yS+LwePCvJ1ilq1kZtM4KhaHOJ0zaJIQk8S2k1hFOI4gvwG9S2nS5r1IbcrQbWpJUymN6lL5JX1x6F4xRcUDBwKGg171kke1m74aX4YnOQJRrT/xJrmgAS+HlTjUZcHr+SMg2lJ5Gxkg6HirvCGsaB4pWNM+2UF3R3OdFtN5qtXmwm5LmlZs1O2ZHZxvyWK6t3+kE98Geby3ceBN2itDNJo=
