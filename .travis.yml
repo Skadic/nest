@@ -18,7 +18,6 @@ before_cache: |
     cargo install cargo-tarpaulin -f
   fi
 script:
-- cargo clean
 - cargo build
 - cargo test
 after_success: |-
