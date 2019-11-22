@@ -50,7 +50,7 @@ impl Cpu6502 {
     }
 
     /// Absolute Addressing Mode.
-    /// The memory address is an absolute value (so the inscruction is a 3-byte instruction)
+    /// The memory address is an absolute value (so the instruction is a 3-byte instruction)
     pub fn ABS(&mut self) -> bool {
         let lo = self.read(self.pc) as u16;
         self.pc += 1;
@@ -122,7 +122,8 @@ impl Cpu6502 {
     }
 
     /// Indirect Addressing of the Zero Page with X-register offset.
-    /// This reads an address from the Page 0 (see ZP0) at the supplied offset byte with an additional offset of the value in the X-register
+    /// This reads an address from the Page 0 (see ZP0) at the supplied offset byte
+    /// with an additional offset of the value in the X-register
     pub fn IZX(&mut self) -> bool {
         let offset = self.read(self.pc) as u16;
         self.pc += 1;
@@ -170,5 +171,423 @@ impl Cpu6502 {
         }
 
         false
+    }
+}
+
+#[allow(non_snake_case)]
+#[cfg(test)]
+mod test {
+    use std::rc::Rc;
+    use std::cell::{RefCell, RefMut};
+    use crate::cpu6502::Cpu6502;
+    use crate::bus::Bus;
+
+    #[test]
+    fn IMP_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Data should be fetched from the accumulator, so add some random data
+        cpu.a = 0x12;
+
+        // Random opcode with Implied Addressing
+        cpu.opcode = 0x00;
+
+        // This should write the accumulator into the "fetched" attribute of the CPU;
+        cpu.IMP();
+
+        assert_eq!(cpu.fetch(), 0x12, "Data not fetched correctly")
+    }
+
+    #[test]
+    fn IMM_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Pick an address, the program counter is on, in immediate addressing, the data should be read from here
+        cpu.pc = 0x1000;
+
+        // Write some data to that address
+        cpu.write(0x1000, 0x20);
+
+        // Random opcode with immediate addressing
+        cpu.opcode = 0xA0;
+
+        // This should set the absolute address to be read to the program counter,
+        // and increase the program counter by 1
+        cpu.IMM();
+
+        // The address to be read from should be equal to what the program counter was
+        assert_eq!(cpu.addr_abs, 0x1000, "Address read incorrectly");
+
+        // The program counter should be incremented
+        assert_eq!(cpu.pc, 0x1001, "Program counter not incremented");
+
+        // Fetch the data
+        cpu.fetch();
+
+        // The fetch operation should read the "0x20" from the address 0x1000
+        assert_eq!(cpu.fetched, 0x20, "Wrong data fetched")
+    }
+
+    #[test]
+    fn ZP0_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with ZP0 Addressing.
+        cpu.opcode = 0x05;
+
+        // Write some data to the Zero Page
+        cpu.write(0x0010, 0x20);
+
+        cpu.pc = 0x1000;
+
+        // Write the offset to be read to the program counter
+        // (which it is going to be read from)
+        cpu.write(0x1000, 0x10);
+
+        cpu.ZP0();
+
+        // The program counter should be incremented by one
+        assert_eq!(cpu.pc, 0x1001);
+
+        // The address to be read should be 0x0000 + the data that was at the program counter: 0x0010
+        assert_eq!(cpu.addr_abs, 0x0010);
+
+        cpu.fetch();
+
+        assert_eq!(cpu.fetched, 0x20, "Wrong data was fetched")
+    }
+
+    #[test]
+    fn ZPX_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with ZPX Addressing.
+        cpu.opcode = 0x15;
+
+        // Write some data to the Zero Page
+        cpu.write(0x0010, 0x20);
+
+        cpu.pc = 0x1000;
+
+        // Write the offset to be read to the program counter
+        // (which it is going to be read from)
+        cpu.write(0x1000, 0x08);
+
+        // Write an additional offset to x
+        // So in the end the address should be 0x08 + 0x08 = 0x10
+        cpu.x = 0x08;
+
+        cpu.ZPX();
+
+        // The program counter should be incremented by one
+        assert_eq!(cpu.pc, 0x1001);
+
+        // The address to be read should be 0x0000 + the data that was at the program counter + the value of the x register: 0x0010
+        assert_eq!(cpu.addr_abs, 0x0010);
+
+        cpu.fetch();
+
+        assert_eq!(cpu.fetched, 0x20, "Wrong data was fetched")
+    }
+
+    #[test]
+    fn ZPY_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with ZPY Addressing.
+        cpu.opcode = 0x96;
+
+        // Write some data to the Zero Page
+        cpu.write(0x0010, 0x20);
+
+        cpu.pc = 0x1000;
+
+        // Write the offset to be read to the program counter
+        // (which it is going to be read from)
+        cpu.write(0x1000, 0x08);
+
+        // Write an additional offset to y
+        // So in the end the address should be 0x08 + 0x08 = 0x10
+        cpu.y = 0x08;
+
+        cpu.ZPY();
+
+        // The program counter should be incremented by one
+        assert_eq!(cpu.pc, 0x1001);
+
+        // The address to be read should be 0x0000 + the data that was at the program counter + the value of the y register: 0x0010
+        assert_eq!(cpu.addr_abs, 0x0010);
+
+        cpu.fetch();
+
+        assert_eq!(cpu.fetched, 0x20, "Wrong data was fetched")
+    }
+
+    #[test]
+    fn ABS_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with ABS Addressing.
+        cpu.opcode = 0x20;
+
+        // Write some data to memory
+        cpu.write(0x1234, 0x20);
+
+        cpu.pc = 0x1000;
+        // Write the lo byte to memory
+        cpu.write(0x1000, 0x34);
+        // Write the hi byte to memory
+        cpu.write(0x1001, 0x12);
+
+        cpu.ABS();
+
+        assert_eq!(cpu.pc, 0x1002, "The program counter should have been incremented by 2");
+        assert_eq!(cpu.addr_abs, 0x1234, "The address has been read incorrectly");
+
+        cpu.fetch();
+        assert_eq!(cpu.fetched, 0x20, "Wrong data was fetched from memory");
+    }
+
+    #[test]
+    fn ABX_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with ABX Addressing.
+        cpu.opcode = 0x1D;
+
+        // Write some data to memory
+        cpu.write(0x1234, 0x20);
+
+        cpu.pc = 0x1000;
+        // Write the lo byte to memory
+        cpu.write(0x1000, 0x30);
+        // Write the hi byte to memory
+        cpu.write(0x1001, 0x12);
+
+        // Additional x offset
+        cpu.x = 0x04;
+
+        cpu.ABX();
+
+        assert_eq!(cpu.pc, 0x1002, "The program counter should have been incremented by 2");
+        assert_eq!(cpu.addr_abs, 0x1234, "The address has been read incorrectly");
+
+        cpu.fetch();
+        assert_eq!(cpu.fetched, 0x20, "Wrong data was fetched from memory");
+    }
+
+    #[test]
+    fn ABY_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with ABY Addressing.
+        cpu.opcode = 0x19;
+
+        // Write some data to memory
+        cpu.write(0x1234, 0x20);
+
+        cpu.pc = 0x1000;
+        // Write the lo byte to memory
+        cpu.write(0x1000, 0x30);
+        // Write the hi byte to memory
+        cpu.write(0x1001, 0x12);
+
+        // Additional y offset
+        cpu.y = 0x04;
+
+        cpu.ABY();
+
+        assert_eq!(cpu.pc, 0x1002, "The program counter should have been incremented by 2");
+        assert_eq!(cpu.addr_abs, 0x1234, "The address has been read incorrectly");
+
+        cpu.fetch();
+        assert_eq!(cpu.fetched, 0x20, "Wrong data was fetched from memory");
+    }
+
+    #[test]
+    fn IND_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with indirect addressing
+        cpu.opcode = 0x6C;
+
+        // Write some data to memory
+        cpu.write(0x1234, 0x20);
+
+        cpu.pc = 0x1000;
+
+        // Write the lo byte of the address to memory
+        cpu.write(0x1000, 0x40);
+        // Write the hi byte of the address to memory
+        cpu.write(0x1001, 0x20);
+
+
+        // Write the lo byte of the target address to memory
+        cpu.write(0x2040, 0x34);
+        // Write the hi byte of the target address to memory
+        cpu.write(0x2041, 0x12);
+
+        cpu.IND();
+
+        assert_eq!(cpu.pc, 0x1002, "Program counter not increased by 2");
+        assert_eq!(cpu.addr_abs, 0x1234, "Target address read incorrectly");
+
+        cpu.fetch();
+
+        assert_eq!(cpu.fetched, 0x20, "Wrong data fetched");
+    }
+
+    #[test]
+    fn IND_bug_handling_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with indirect addressing
+        cpu.opcode = 0x6C;
+
+        // Write some data to memory
+        cpu.write(0x1234, 0x20);
+
+        cpu.pc = 0x1000;
+
+        // Write the lo byte of the address to memory
+        // This being 0xFF triggers the bug
+        cpu.write(0x1000, 0xFF);
+        // Write the hi byte of the address to memory
+        cpu.write(0x1001, 0x20);
+
+
+        // Write the lo byte of the target address to memory
+        cpu.write(0x20FF, 0x34);
+        // Write the hi byte of the target address to memory
+        // Note, that this is 0x2000 and not 0x2100,
+        // because the simulated bug overflowed the 0xFF of the lo byte
+        // without updating the hi byte
+        cpu.write(0x2000, 0x12);
+
+        cpu.IND();
+
+        assert_eq!(cpu.pc, 0x1002, "Program counter not increased by 2");
+        assert_eq!(cpu.addr_abs, 0x1234, "Target address read incorrectly");
+
+        cpu.fetch();
+
+        assert_eq!(cpu.fetched, 0x20, "Wrong data fetched");
+    }
+
+    #[test]
+    fn IZX_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with indirect X-offset addressing
+        cpu.opcode = 0x01;
+
+        // Write some data to memory
+        cpu.write(0x1234, 0x20);
+
+        cpu.pc = 0x1000;
+
+        // Write the offset in the zero page to the location of the program counter
+        cpu.write(0x1000, 0x40);
+
+        // Additional offset in the X register
+        cpu.x = 0x08;
+
+        // As a result, the target address must be at 0x0048 and 0x0049
+        // Write the lo byte of the target address to memory
+        cpu.write(0x0048, 0x34);
+        // Write the hi byte of the target address to memory
+        cpu.write(0x0049, 0x12);
+
+        cpu.IZX();
+
+        assert_eq!(cpu.pc, 0x1001, "Program counter not increased by 1");
+        assert_eq!(cpu.addr_abs, 0x1234, "Target address read incorrectly");
+
+        cpu.fetch();
+
+        assert_eq!(cpu.fetched, 0x20, "Wrong data fetched");
+    }
+
+    #[test]
+    fn IZY_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        // Random opcode with indirect X-offset addressing
+        cpu.opcode = 0x01;
+
+        // Write some data to memory
+        cpu.write(0x1236, 0x20);
+
+        cpu.pc = 0x1000;
+
+        // Additional offset of the *absolute address* in the Y register
+        cpu.y = 0x02;
+
+        // Write the offset in the zero page to the location of the program counter
+        cpu.write(0x1000, 0x40);
+
+        // As a result, the target address must be at 0x0040 and 0x0041
+        // The resulting target address will then be offset by the value in the Y register
+        // Write the lo byte of the target address to memory
+        cpu.write(0x0040, 0x34);
+        // Write the hi byte of the target address to memory
+        cpu.write(0x0041, 0x12);
+
+        cpu.IZY();
+
+        assert_eq!(cpu.pc, 0x1001, "Program counter not increased by 1");
+        assert_eq!(cpu.addr_abs, 0x1236, "Target address read incorrectly");
+
+        cpu.fetch();
+
+        assert_eq!(cpu.fetched, 0x20, "Wrong data fetched");
+    }
+
+    #[test]
+    fn REL_test() {
+        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
+        let _bus = Bus::new(cpu.clone());
+        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+
+        cpu.pc = 0x1000;
+        cpu.write(0x1000, 0x000F);
+
+        cpu.REL();
+
+        assert_eq!(cpu.addr_rel, 0x000F, "Relative address not set");
+        assert_eq!(cpu.pc, 0x1001, "Program counter not incremented");
+
+        cpu.pc = 0x1000;
+        cpu.write(0x1000, 0x00FF);
+
+        cpu.REL();
+
+        assert_eq!(cpu.addr_rel, 0xFFFF, "Relative address not converted to negative");
+        assert_eq!(cpu.pc, 0x1001, "Program counter not incremented");
+
     }
 }
