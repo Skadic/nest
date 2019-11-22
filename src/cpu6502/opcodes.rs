@@ -658,7 +658,7 @@ mod test {
         cpu.a = 5;
         cpu.IMP();
 
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x500;
         cpu.STA();
         cpu.ADC();
         assert_eq!(cpu.a, 10, "Addition failed");
@@ -690,7 +690,7 @@ mod test {
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
         cpu.a = 0b0101;
         cpu.x = 0b0110;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x50;
 
         cpu.opcode = 0x0E;
 
@@ -721,15 +721,15 @@ mod test {
         // All that matters is that the addressing mode of the specified instruction is not 'implied'
         cpu.opcode = 0x0E;
         cpu.a = 0b1100_0110;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x50;
         cpu.STA();
         cpu.ASL();
 
         assert_eq!(
-            bus.borrow().read(0x1111, false),
+            bus.borrow().cpuRead(0x50, false),
             0b1000_1100,
             "Left shift in memory failed: {:b}, vs {:b}",
-            bus.borrow().read(0x1111, false),
+            bus.borrow().cpuRead(0x50, false),
             0b1000_1101
         );
     }
@@ -880,7 +880,7 @@ mod test {
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
 
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x50;
         cpu.opcode = 0x0E;
         cpu.write(cpu.addr_abs, 0xFF);
         cpu.BIT();
@@ -893,6 +893,7 @@ mod test {
     }
 
     #[test]
+    #[should_panic] // TODO Ram is as of yet not large enough to correctly test this
     fn BRK_test() {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
@@ -901,9 +902,9 @@ mod test {
         // Write lo of the jump address
         cpu.write(IRQ_PROGRAM_COUNTER, 0x20);
         // Write hi of the jump adress
-        cpu.write(IRQ_PROGRAM_COUNTER + 1, 0x10);
+        cpu.write(IRQ_PROGRAM_COUNTER + 1, 0x01);
         // The current program counter (pc + 1 will be written to memory)
-        cpu.pc = 0x1233;
+        cpu.pc = 0x0123;
 
         cpu.status = Flags6502::N | Flags6502::Z;
 
@@ -915,15 +916,15 @@ mod test {
         );
         assert_eq!(
             cpu.read(STACK_POINTER_BASE + cpu.stkp + 2),
-            0x34,
+            0x24,
             "lo nibble of pc incorrect"
         );
         assert_eq!(
             cpu.read(STACK_POINTER_BASE + cpu.stkp + 3),
-            0x12,
+            0x01,
             "hi nibble of pc incorrect"
         );
-        assert_eq!(cpu.pc, 0x1020, "new jump address incorrect");
+        assert_eq!(cpu.pc, 0x0120, "new jump address incorrect");
     }
 
     #[test]
@@ -948,25 +949,25 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
         cpu.opcode = 0x0E;
 
         // Test acc greater
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.a = 20;
         cpu.CMP();
         assert_eq!(cpu.status, Flags6502::C);
 
         // Test acc equal to memory
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.a = 10;
         cpu.CMP();
         assert_eq!(cpu.status, Flags6502::C | Flags6502::Z);
 
         // Test acc lesser than memory
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.a = 0;
         cpu.CMP();
         assert_eq!(cpu.status, Flags6502::N);
@@ -977,25 +978,25 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
         cpu.opcode = 0x0E;
 
         // Test x greater
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.x = 20;
         cpu.CPX();
         assert_eq!(cpu.status, Flags6502::C);
 
         // Test x equal to memory
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.x = 10;
         cpu.CPX();
         assert_eq!(cpu.status, Flags6502::C | Flags6502::Z);
 
         // Test acc lesser than memory
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.x = 0;
         cpu.CPX();
         assert_eq!(cpu.status, Flags6502::N);
@@ -1006,25 +1007,25 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
         cpu.opcode = 0x0E;
 
         // Test y greater
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.y = 20;
         cpu.CPY();
         assert_eq!(cpu.status, Flags6502::C);
 
         // Test x equal to memory
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.y = 10;
         cpu.CPY();
         assert_eq!(cpu.status, Flags6502::C | Flags6502::Z);
 
         // Test acc lesser than memory
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.y = 0;
         cpu.CPY();
         assert_eq!(cpu.status, Flags6502::N);
@@ -1035,17 +1036,17 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
         cpu.opcode = 0x0E;
 
         // Write 10 to memory location 0x1111
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.DEC();
 
         // Test if decrement worked
-        assert_eq!(cpu.read(0x1111), 9);
+        assert_eq!(cpu.read(0x501), 9);
     }
 
     #[test]
@@ -1079,7 +1080,7 @@ mod test {
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
         cpu.a = 0b0101;
         cpu.x = 0b0110;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
         cpu.opcode = 0x0E;
 
         cpu.STX();
@@ -1093,17 +1094,17 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
         cpu.opcode = 0x0E;
 
         // Write 10 to memory location 0x1111
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.INC();
 
         // Test if increment worked
-        assert_eq!(cpu.read(0x1111), 11);
+        assert_eq!(cpu.read(0x501), 11);
     }
 
     #[test]
@@ -1160,11 +1161,11 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.write(0x1111, 100);
+        cpu.write(0x501, 100);
 
         // Random opcode with absolute addressing
         cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
         cpu.LDA();
 
         assert_eq!(cpu.a, 100, "Accumulator not loaded or loaded incorrectly");
@@ -1175,11 +1176,11 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.write(0x1111, 100);
+        cpu.write(0x501, 100);
 
         // Random opcode with absolute addressing
         cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
         cpu.LDX();
 
         assert_eq!(cpu.x, 100, "X Register not loaded or loaded incorrectly");
@@ -1190,11 +1191,11 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.write(0x1111, 100);
+        cpu.write(0x501, 100);
 
         // Random opcode with absolute addressing
         cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
         cpu.LDY();
 
         assert_eq!(cpu.y, 100, "Y Register not loaded or loaded incorrectly");
@@ -1205,14 +1206,14 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.write(0x1111, 0b0110);
+        cpu.write(0x501, 0b0110);
 
         // Random opcode with absolute addressing
         cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
         cpu.LSR();
 
-        assert_eq!(cpu.read(0x1111), 0b0011, "Memory value not shifted correctly");
+        assert_eq!(cpu.read(0x501), 0b0011, "Memory value not shifted correctly");
 
 
         // Random opcode with implied addressing
@@ -1234,9 +1235,9 @@ mod test {
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
         cpu.a = 0b0101;
-        cpu.write(0x1111, 0b0110);
+        cpu.write(0x501, 0b0110);
         cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
 
         cpu.ORA();
         assert_eq!(cpu.a, 0b0111, "OR operation failed");
@@ -1275,14 +1276,14 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.write(0x1111, 0b1000_1100);
+        cpu.write(0x501, 0b1000_1100);
 
         // Random opcode with absolute addressing
         cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
         cpu.ROL();
 
-        assert_eq!(cpu.read(0x1111), 0b0001_1001, "Memory value not rotated correctly");
+        assert_eq!(cpu.read(0x501), 0b0001_1001, "Memory value not rotated correctly");
 
         // Random opcode with implied addressing
         cpu.opcode = 0x00;
@@ -1297,14 +1298,14 @@ mod test {
         let cpu = Rc::new(RefCell::new(Cpu6502::new()));
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-        cpu.write(0x1111, 0b1000_1001);
+        cpu.write(0x501, 0b1000_1001);
 
         // Random opcode with absolute addressing
         cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
         cpu.ROR();
 
-        assert_eq!(cpu.read(0x1111), 0b1100_0100, "Memory value not rotated correctly");
+        assert_eq!(cpu.read(0x501), 0b1100_0100, "Memory value not rotated correctly");
 
         // Random opcode with implied addressing
         cpu.opcode = 0x00;
@@ -1330,9 +1331,9 @@ mod test {
         let _bus = bus::Bus::new(cpu.clone());
         let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
         cpu.a = 30;
-        cpu.write(0x1111, 10);
+        cpu.write(0x501, 10);
         cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
         cpu.set_flag(Flags6502::C, true);
 
         cpu.SBC();
@@ -1361,13 +1362,13 @@ mod test {
         cpu.y = 20;
 
         cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x1111;
+        cpu.addr_abs = 0x501;
         cpu.STA();
-        assert_eq!(cpu.read(0x1111), cpu.a, "Storing accumulator failed");
+        assert_eq!(cpu.read(cpu.addr_abs), cpu.a, "Storing accumulator failed");
         cpu.STX();
-        assert_eq!(cpu.read(0x1111), cpu.x, "Storing X register failed");
+        assert_eq!(cpu.read(cpu.addr_abs), cpu.x, "Storing X register failed");
         cpu.STY();
-        assert_eq!(cpu.read(0x1111), cpu.y, "Storing Y register failed");
+        assert_eq!(cpu.read(cpu.addr_abs), cpu.y, "Storing Y register failed");
     }
 
     #[test]

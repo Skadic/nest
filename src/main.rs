@@ -9,6 +9,8 @@ use std::rc::Rc;
 
 mod bus;
 mod cpu6502;
+mod ppu2C02;
+mod cartridge;
 
 fn main() {
     let cpu = Rc::new(RefCell::new(cpu6502::Cpu6502::new()));
@@ -17,7 +19,7 @@ fn main() {
     let program = "A9 05 AA A9 06 8E 11 11 6D 11 11";
 
     for (i, b) in parse_program(program).into_iter().enumerate() {
-        bus.borrow_mut().write(i as u16, b);
+        bus.borrow_mut().cpuWrite(i as u16, b);
     }
     for instr in cpu6502::disassemble(parse_program(program)).into_iter() {
         println!("{}", instr);
@@ -27,7 +29,7 @@ fn main() {
         cpu.borrow_mut().clock()
     }
 
-    println!("{}", bus.borrow().read(0x1111, false));
+    println!("{}", bus.borrow().cpuRead(0x1111, false));
     println!("{:?}", cpu.borrow());
 }
 

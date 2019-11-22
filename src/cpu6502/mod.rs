@@ -93,7 +93,7 @@ impl Cpu6502 {
             .as_ref()
             .expect("cpu not connected to Bus")
             .borrow()
-            .read(addr, false)
+            .cpuRead(addr, false)
     }
 
     fn write(&self, addr: u16, data: u8) {
@@ -101,7 +101,7 @@ impl Cpu6502 {
             .as_ref()
             .expect("cpu not connected to Bus")
             .borrow_mut()
-            .write(addr, data)
+            .cpuWrite(addr, data)
     }
 
     pub fn get_flag(&self, flag: Flags6502) -> bool {

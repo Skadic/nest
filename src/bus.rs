@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::fmt::Debug;
 use std::rc::Rc;
 
-const RAM_SIZE: usize = 64 * 1024;
+const RAM_SIZE: usize = 2048;
 
 pub struct Bus {
     cpu: Rc<RefCell<Cpu6502>>,
@@ -21,11 +21,11 @@ impl Bus {
         bus
     }
 
-    pub fn write(&mut self, addr: u16, data: u8) {
+    pub fn cpuWrite(&mut self, addr: u16, data: u8) {
         self.ram[addr as usize] = data;
     }
 
-    pub fn read(&self, addr: u16, _read_only: bool) -> u8 {
+    pub fn cpuRead(&self, addr: u16, _read_only: bool) -> u8 {
         self.ram[addr as usize]
     }
 }

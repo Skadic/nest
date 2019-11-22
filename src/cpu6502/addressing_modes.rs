@@ -207,10 +207,10 @@ mod test {
         let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
 
         // Pick an address, the program counter is on, in immediate addressing, the data should be read from here
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
 
         // Write some data to that address
-        cpu.write(0x1000, 0x20);
+        cpu.write(0x500, 0x20);
 
         // Random opcode with immediate addressing
         cpu.opcode = 0xA0;
@@ -220,10 +220,10 @@ mod test {
         cpu.IMM();
 
         // The address to be read from should be equal to what the program counter was
-        assert_eq!(cpu.addr_abs, 0x1000, "Address read incorrectly");
+        assert_eq!(cpu.addr_abs, 0x500, "Address read incorrectly");
 
         // The program counter should be incremented
-        assert_eq!(cpu.pc, 0x1001, "Program counter not incremented");
+        assert_eq!(cpu.pc, 0x501, "Program counter not incremented");
 
         // Fetch the data
         cpu.fetch();
@@ -244,16 +244,16 @@ mod test {
         // Write some data to the Zero Page
         cpu.write(0x0010, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
 
         // Write the offset to be read to the program counter
         // (which it is going to be read from)
-        cpu.write(0x1000, 0x10);
+        cpu.write(0x500, 0x10);
 
         cpu.ZP0();
 
         // The program counter should be incremented by one
-        assert_eq!(cpu.pc, 0x1001);
+        assert_eq!(cpu.pc, 0x501);
 
         // The address to be read should be 0x0000 + the data that was at the program counter: 0x0010
         assert_eq!(cpu.addr_abs, 0x0010);
@@ -275,11 +275,11 @@ mod test {
         // Write some data to the Zero Page
         cpu.write(0x0010, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
 
         // Write the offset to be read to the program counter
         // (which it is going to be read from)
-        cpu.write(0x1000, 0x08);
+        cpu.write(0x500, 0x08);
 
         // Write an additional offset to x
         // So in the end the address should be 0x08 + 0x08 = 0x10
@@ -288,7 +288,7 @@ mod test {
         cpu.ZPX();
 
         // The program counter should be incremented by one
-        assert_eq!(cpu.pc, 0x1001);
+        assert_eq!(cpu.pc, 0x501);
 
         // The address to be read should be 0x0000 + the data that was at the program counter + the value of the x register: 0x0010
         assert_eq!(cpu.addr_abs, 0x0010);
@@ -310,11 +310,11 @@ mod test {
         // Write some data to the Zero Page
         cpu.write(0x0010, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
 
         // Write the offset to be read to the program counter
         // (which it is going to be read from)
-        cpu.write(0x1000, 0x08);
+        cpu.write(0x500, 0x08);
 
         // Write an additional offset to y
         // So in the end the address should be 0x08 + 0x08 = 0x10
@@ -323,7 +323,7 @@ mod test {
         cpu.ZPY();
 
         // The program counter should be incremented by one
-        assert_eq!(cpu.pc, 0x1001);
+        assert_eq!(cpu.pc, 0x501);
 
         // The address to be read should be 0x0000 + the data that was at the program counter + the value of the y register: 0x0010
         assert_eq!(cpu.addr_abs, 0x0010);
@@ -343,18 +343,18 @@ mod test {
         cpu.opcode = 0x20;
 
         // Write some data to memory
-        cpu.write(0x1234, 0x20);
+        cpu.write(0x123, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
         // Write the lo byte to memory
-        cpu.write(0x1000, 0x34);
+        cpu.write(0x500, 0x23);
         // Write the hi byte to memory
-        cpu.write(0x1001, 0x12);
+        cpu.write(0x501, 0x01);
 
         cpu.ABS();
 
-        assert_eq!(cpu.pc, 0x1002, "The program counter should have been incremented by 2");
-        assert_eq!(cpu.addr_abs, 0x1234, "The address has been read incorrectly");
+        assert_eq!(cpu.pc, 0x502, "The program counter should have been incremented by 2");
+        assert_eq!(cpu.addr_abs, 0x123, "The address has been read incorrectly");
 
         cpu.fetch();
         assert_eq!(cpu.fetched, 0x20, "Wrong data was fetched from memory");
@@ -370,21 +370,21 @@ mod test {
         cpu.opcode = 0x1D;
 
         // Write some data to memory
-        cpu.write(0x1234, 0x20);
+        cpu.write(0x127, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
         // Write the lo byte to memory
-        cpu.write(0x1000, 0x30);
+        cpu.write(0x500, 0x23);
         // Write the hi byte to memory
-        cpu.write(0x1001, 0x12);
+        cpu.write(0x501, 0x01);
 
         // Additional x offset
         cpu.x = 0x04;
 
         cpu.ABX();
 
-        assert_eq!(cpu.pc, 0x1002, "The program counter should have been incremented by 2");
-        assert_eq!(cpu.addr_abs, 0x1234, "The address has been read incorrectly");
+        assert_eq!(cpu.pc, 0x502, "The program counter should have been incremented by 2");
+        assert_eq!(cpu.addr_abs, 0x127, "The address has been read incorrectly");
 
         cpu.fetch();
         assert_eq!(cpu.fetched, 0x20, "Wrong data was fetched from memory");
@@ -396,25 +396,25 @@ mod test {
         let _bus = Bus::new(cpu.clone());
         let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
 
-        // Random opcode with ABY Addressing.
-        cpu.opcode = 0x19;
+        // Random opcode with ABX Addressing.
+        cpu.opcode = 0x1D;
 
         // Write some data to memory
-        cpu.write(0x1234, 0x20);
+        cpu.write(0x127, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
         // Write the lo byte to memory
-        cpu.write(0x1000, 0x30);
+        cpu.write(0x500, 0x23);
         // Write the hi byte to memory
-        cpu.write(0x1001, 0x12);
+        cpu.write(0x501, 0x01);
 
         // Additional y offset
         cpu.y = 0x04;
 
         cpu.ABY();
 
-        assert_eq!(cpu.pc, 0x1002, "The program counter should have been incremented by 2");
-        assert_eq!(cpu.addr_abs, 0x1234, "The address has been read incorrectly");
+        assert_eq!(cpu.pc, 0x502, "The program counter should have been incremented by 2");
+        assert_eq!(cpu.addr_abs, 0x127, "The address has been read incorrectly");
 
         cpu.fetch();
         assert_eq!(cpu.fetched, 0x20, "Wrong data was fetched from memory");
@@ -430,25 +430,25 @@ mod test {
         cpu.opcode = 0x6C;
 
         // Write some data to memory
-        cpu.write(0x1234, 0x20);
+        cpu.write(0x123, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
 
         // Write the lo byte of the address to memory
-        cpu.write(0x1000, 0x40);
+        cpu.write(0x500, 0x40);
         // Write the hi byte of the address to memory
-        cpu.write(0x1001, 0x20);
+        cpu.write(0x501, 0x02);
 
 
         // Write the lo byte of the target address to memory
-        cpu.write(0x2040, 0x34);
+        cpu.write(0x0240, 0x23);
         // Write the hi byte of the target address to memory
-        cpu.write(0x2041, 0x12);
+        cpu.write(0x0241, 0x01);
 
         cpu.IND();
 
-        assert_eq!(cpu.pc, 0x1002, "Program counter not increased by 2");
-        assert_eq!(cpu.addr_abs, 0x1234, "Target address read incorrectly");
+        assert_eq!(cpu.pc, 0x502, "Program counter not increased by 2");
+        assert_eq!(cpu.addr_abs, 0x123, "Target address read incorrectly");
 
         cpu.fetch();
 
@@ -465,29 +465,29 @@ mod test {
         cpu.opcode = 0x6C;
 
         // Write some data to memory
-        cpu.write(0x1234, 0x20);
+        cpu.write(0x123, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
 
         // Write the lo byte of the address to memory
         // This being 0xFF triggers the bug
-        cpu.write(0x1000, 0xFF);
+        cpu.write(0x500, 0xFF);
         // Write the hi byte of the address to memory
-        cpu.write(0x1001, 0x20);
+        cpu.write(0x501, 0x01);
 
 
         // Write the lo byte of the target address to memory
-        cpu.write(0x20FF, 0x34);
+        cpu.write(0x01FF, 0x23);
         // Write the hi byte of the target address to memory
-        // Note, that this is 0x2000 and not 0x2100,
+        // Note, that this is 0x0100 and not 0x0200,
         // because the simulated bug overflowed the 0xFF of the lo byte
         // without updating the hi byte
-        cpu.write(0x2000, 0x12);
+        cpu.write(0x0100, 0x01);
 
         cpu.IND();
 
-        assert_eq!(cpu.pc, 0x1002, "Program counter not increased by 2");
-        assert_eq!(cpu.addr_abs, 0x1234, "Target address read incorrectly");
+        assert_eq!(cpu.pc, 0x502, "Program counter not increased by 2");
+        assert_eq!(cpu.addr_abs, 0x123, "Target address read incorrectly");
 
         cpu.fetch();
 
@@ -504,26 +504,26 @@ mod test {
         cpu.opcode = 0x01;
 
         // Write some data to memory
-        cpu.write(0x1234, 0x20);
+        cpu.write(0x123, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
 
         // Write the offset in the zero page to the location of the program counter
-        cpu.write(0x1000, 0x40);
+        cpu.write(0x500, 0x40);
 
         // Additional offset in the X register
         cpu.x = 0x08;
 
         // As a result, the target address must be at 0x0048 and 0x0049
         // Write the lo byte of the target address to memory
-        cpu.write(0x0048, 0x34);
+        cpu.write(0x0048, 0x23);
         // Write the hi byte of the target address to memory
-        cpu.write(0x0049, 0x12);
+        cpu.write(0x0049, 0x01);
 
         cpu.IZX();
 
-        assert_eq!(cpu.pc, 0x1001, "Program counter not increased by 1");
-        assert_eq!(cpu.addr_abs, 0x1234, "Target address read incorrectly");
+        assert_eq!(cpu.pc, 0x501, "Program counter not increased by 1");
+        assert_eq!(cpu.addr_abs, 0x123, "Target address read incorrectly");
 
         cpu.fetch();
 
@@ -540,27 +540,27 @@ mod test {
         cpu.opcode = 0x01;
 
         // Write some data to memory
-        cpu.write(0x1236, 0x20);
+        cpu.write(0x125, 0x20);
 
-        cpu.pc = 0x1000;
+        cpu.pc = 0x500;
 
         // Additional offset of the *absolute address* in the Y register
         cpu.y = 0x02;
 
         // Write the offset in the zero page to the location of the program counter
-        cpu.write(0x1000, 0x40);
+        cpu.write(0x500, 0x40);
 
         // As a result, the target address must be at 0x0040 and 0x0041
         // The resulting target address will then be offset by the value in the Y register
         // Write the lo byte of the target address to memory
-        cpu.write(0x0040, 0x34);
+        cpu.write(0x0040, 0x23);
         // Write the hi byte of the target address to memory
-        cpu.write(0x0041, 0x12);
+        cpu.write(0x0041, 0x01);
 
         cpu.IZY();
 
-        assert_eq!(cpu.pc, 0x1001, "Program counter not increased by 1");
-        assert_eq!(cpu.addr_abs, 0x1236, "Target address read incorrectly");
+        assert_eq!(cpu.pc, 0x501, "Program counter not increased by 1");
+        assert_eq!(cpu.addr_abs, 0x125, "Target address read incorrectly");
 
         cpu.fetch();
 
@@ -573,21 +573,21 @@ mod test {
         let _bus = Bus::new(cpu.clone());
         let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
 
-        cpu.pc = 0x1000;
-        cpu.write(0x1000, 0x000F);
+        cpu.pc = 0x500;
+        cpu.write(0x500, 0x000F);
 
         cpu.REL();
 
         assert_eq!(cpu.addr_rel, 0x000F, "Relative address not set");
-        assert_eq!(cpu.pc, 0x1001, "Program counter not incremented");
+        assert_eq!(cpu.pc, 0x501, "Program counter not incremented");
 
-        cpu.pc = 0x1000;
-        cpu.write(0x1000, 0x00FF);
+        cpu.pc = 0x500;
+        cpu.write(0x500, 0x00FF);
 
         cpu.REL();
 
         assert_eq!(cpu.addr_rel, 0xFFFF, "Relative address not converted to negative");
-        assert_eq!(cpu.pc, 0x1001, "Program counter not incremented");
+        assert_eq!(cpu.pc, 0x501, "Program counter not incremented");
 
     }
 }
