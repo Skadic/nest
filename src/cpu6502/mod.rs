@@ -93,7 +93,7 @@ impl Cpu6502 {
             .as_ref()
             .expect("cpu not connected to Bus")
             .borrow()
-            .cpuRead(addr, false)
+            .cpu_read(addr, false)
     }
 
     fn write(&self, addr: u16, data: u8) {
@@ -101,7 +101,7 @@ impl Cpu6502 {
             .as_ref()
             .expect("cpu not connected to Bus")
             .borrow_mut()
-            .cpuWrite(addr, data)
+            .cpu_write(addr, data)
     }
 
     pub fn get_flag(&self, flag: Flags6502) -> bool {
@@ -144,7 +144,7 @@ impl Cpu6502 {
     }
 
     // Configure the CPU into a known state
-    fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.a = 0;
         self.x = 0;
         self.y = 0;

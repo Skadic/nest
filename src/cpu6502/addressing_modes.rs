@@ -181,12 +181,23 @@ mod test {
     use std::cell::{RefCell, RefMut};
     use crate::cpu6502::Cpu6502;
     use crate::bus::Bus;
+    use crate::ppu2C02::Ppu2C02;
+
+    fn setup() -> (Rc<RefCell<Cpu6502>>, Rc<RefCell<Bus>>) {
+        let cpu : Rc<RefCell<Cpu6502>> = Rc::new(
+            RefCell::new(Cpu6502::new()));
+        let ppu: Rc<RefCell<Ppu2C02>> = Rc::new(
+            RefCell::new(Ppu2C02::new())
+        );
+        let bus: Rc<RefCell<Bus>> = Bus::new(cpu.clone(), ppu.clone());
+
+        (cpu, bus)
+    }
 
     #[test]
     fn IMP_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Data should be fetched from the accumulator, so add some random data
         cpu.a = 0x12;
@@ -202,9 +213,8 @@ mod test {
 
     #[test]
     fn IMM_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Pick an address, the program counter is on, in immediate addressing, the data should be read from here
         cpu.pc = 0x500;
@@ -234,9 +244,8 @@ mod test {
 
     #[test]
     fn ZP0_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with ZP0 Addressing.
         cpu.opcode = 0x05;
@@ -265,9 +274,8 @@ mod test {
 
     #[test]
     fn ZPX_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with ZPX Addressing.
         cpu.opcode = 0x15;
@@ -300,9 +308,8 @@ mod test {
 
     #[test]
     fn ZPY_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with ZPY Addressing.
         cpu.opcode = 0x96;
@@ -335,9 +342,8 @@ mod test {
 
     #[test]
     fn ABS_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with ABS Addressing.
         cpu.opcode = 0x20;
@@ -362,9 +368,8 @@ mod test {
 
     #[test]
     fn ABX_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with ABX Addressing.
         cpu.opcode = 0x1D;
@@ -392,9 +397,8 @@ mod test {
 
     #[test]
     fn ABY_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with ABX Addressing.
         cpu.opcode = 0x1D;
@@ -422,9 +426,8 @@ mod test {
 
     #[test]
     fn IND_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with indirect addressing
         cpu.opcode = 0x6C;
@@ -457,9 +460,8 @@ mod test {
 
     #[test]
     fn IND_bug_handling_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with indirect addressing
         cpu.opcode = 0x6C;
@@ -496,9 +498,8 @@ mod test {
 
     #[test]
     fn IZX_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with indirect X-offset addressing
         cpu.opcode = 0x01;
@@ -532,9 +533,8 @@ mod test {
 
     #[test]
     fn IZY_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         // Random opcode with indirect X-offset addressing
         cpu.opcode = 0x01;
@@ -569,9 +569,8 @@ mod test {
 
     #[test]
     fn REL_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = Bus::new(cpu.clone());
-        let mut cpu: RefMut<Cpu6502> = cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
 
         cpu.pc = 0x500;
         cpu.write(0x500, 0x000F);

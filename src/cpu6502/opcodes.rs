@@ -646,15 +646,27 @@ mod test {
     use crate::cpu6502::{Cpu6502, IRQ_PROGRAM_COUNTER, STACK_POINTER_BASE};
 
     use crate::bus;
-    use std::cell::RefCell;
+    use std::cell::{RefCell, RefMut};
     use std::rc::Rc;
+    use crate::bus::Bus;
+    use crate::ppu2C02::Ppu2C02;
 
+    fn setup() -> (Rc<RefCell<Cpu6502>>, Rc<RefCell<Bus>>) {
+        let cpu : Rc<RefCell<Cpu6502>> = Rc::new(
+            RefCell::new(Cpu6502::new()));
+        let ppu: Rc<RefCell<Ppu2C02>> = Rc::new(
+            RefCell::new(Ppu2C02::new())
+        );
+        let bus: Rc<RefCell<Bus>> = Bus::new(cpu.clone(), ppu.clone());
+        
+        (cpu, bus)
+    }
+    
     #[test]
     fn ADC_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
-
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
+        
         cpu.a = 5;
         cpu.IMP();
 
@@ -685,9 +697,8 @@ mod test {
 
     #[test]
     fn AND_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+        let mut cpu = cpu.borrow_mut();
         cpu.a = 0b0101;
         cpu.x = 0b0110;
         cpu.addr_abs = 0x50;
@@ -702,9 +713,8 @@ mod test {
 
     #[test]
     fn ASL_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.a = 0b1100_0110;
         cpu.fetched = cpu.a;
 
@@ -726,19 +736,18 @@ mod test {
         cpu.ASL();
 
         assert_eq!(
-            bus.borrow().cpuRead(0x50, false),
+            cpu.read(0x50),
             0b1000_1100,
             "Left shift in memory failed: {:b}, vs {:b}",
-            bus.borrow().cpuRead(0x50, false),
+            cpu.read(0x50),
             0b1000_1101
         );
     }
 
     #[test]
     fn BCC_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.pc = 200;
         cpu.addr_rel = 100;
@@ -755,9 +764,8 @@ mod test {
 
     #[test]
     fn BCS_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.pc = 200;
         cpu.addr_rel = 100;
@@ -771,9 +779,8 @@ mod test {
 
     #[test]
     fn BEQ_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.pc = 200;
         cpu.addr_rel = 100;
@@ -787,9 +794,8 @@ mod test {
 
     #[test]
     fn BNE_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.pc = 200;
         cpu.addr_rel = 100;
@@ -806,9 +812,8 @@ mod test {
 
     #[test]
     fn BPL_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.pc = 200;
         cpu.addr_rel = 100;
@@ -825,9 +830,8 @@ mod test {
 
     #[test]
     fn BMI_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.pc = 200;
         cpu.addr_rel = 100;
@@ -841,9 +845,8 @@ mod test {
 
     #[test]
     fn BVC_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.pc = 200;
         cpu.addr_rel = 100;
@@ -857,9 +860,8 @@ mod test {
 
     #[test]
     fn BVS_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.pc = 200;
         cpu.addr_rel = 100;
@@ -876,9 +878,8 @@ mod test {
 
     #[test]
     fn BIT_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.addr_abs = 0x50;
         cpu.opcode = 0x0E;
@@ -895,9 +896,8 @@ mod test {
     #[test]
     #[should_panic] // TODO Ram is as of yet not large enough to correctly test this
     fn BRK_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         // Write lo of the jump address
         cpu.write(IRQ_PROGRAM_COUNTER, 0x20);
@@ -929,9 +929,8 @@ mod test {
 
     #[test]
     fn clear_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.status = Flags6502::C | Flags6502::D | Flags6502::I | Flags6502::V;
 
         cpu.CLC();
@@ -946,9 +945,8 @@ mod test {
 
     #[test]
     fn CMP_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
@@ -975,9 +973,8 @@ mod test {
 
     #[test]
     fn CPX_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
@@ -1004,9 +1001,8 @@ mod test {
 
     #[test]
     fn CPY_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
@@ -1033,9 +1029,8 @@ mod test {
 
     #[test]
     fn DEC_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
@@ -1051,9 +1046,8 @@ mod test {
 
     #[test]
     fn DEX_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.x = 10;
         cpu.DEX();
 
@@ -1063,9 +1057,8 @@ mod test {
 
     #[test]
     fn DEY_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.y = 10;
         cpu.DEY();
 
@@ -1075,9 +1068,8 @@ mod test {
 
     #[test]
     fn EOR_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.a = 0b0101;
         cpu.x = 0b0110;
         cpu.addr_abs = 0x501;
@@ -1091,9 +1083,8 @@ mod test {
 
     #[test]
     fn INC_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.addr_abs = 0x501;
 
         // Random opcode, that has absolute addressing
@@ -1109,9 +1100,8 @@ mod test {
 
     #[test]
     fn INX_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.x = 10;
         cpu.INX();
 
@@ -1121,9 +1111,8 @@ mod test {
 
     #[test]
     fn INY_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.y = 10;
         cpu.INY();
 
@@ -1133,9 +1122,8 @@ mod test {
 
     #[test]
     fn JMP_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.addr_abs = 0x1111;
         cpu.JMP();
@@ -1144,9 +1132,8 @@ mod test {
 
     #[test]
     fn JSR_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.pc = 0x1235;
         cpu.addr_abs = 0x1111;
 
@@ -1158,9 +1145,8 @@ mod test {
 
     #[test]
     fn LDA_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.write(0x501, 100);
 
         // Random opcode with absolute addressing
@@ -1173,9 +1159,8 @@ mod test {
 
     #[test]
     fn LDX_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.write(0x501, 100);
 
         // Random opcode with absolute addressing
@@ -1188,9 +1173,8 @@ mod test {
 
     #[test]
     fn LDY_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.write(0x501, 100);
 
         // Random opcode with absolute addressing
@@ -1203,9 +1187,8 @@ mod test {
 
     #[test]
     fn LSR_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.write(0x501, 0b0110);
 
         // Random opcode with absolute addressing
@@ -1231,9 +1214,8 @@ mod test {
 
     #[test]
     fn ORA_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.a = 0b0101;
         cpu.write(0x501, 0b0110);
         cpu.opcode = 0x0E;
@@ -1246,9 +1228,8 @@ mod test {
 
     #[test]
     fn PHA_PLA_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.a = 0b0101;
         cpu.PHA();
         assert_eq!(cpu.read(STACK_POINTER_BASE + cpu.stkp + 1), cpu.a);
@@ -1260,9 +1241,8 @@ mod test {
 
     #[test]
     fn PHP_PLP_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.status = Flags6502::C | Flags6502::N;
         cpu.PHP();
         assert_eq!(Flags6502::from_bits(cpu.read(STACK_POINTER_BASE + cpu.stkp + 1)).unwrap(), cpu.status);
@@ -1273,9 +1253,8 @@ mod test {
 
     #[test]
     fn ROL_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.write(0x501, 0b1000_1100);
 
         // Random opcode with absolute addressing
@@ -1295,9 +1274,8 @@ mod test {
 
     #[test]
     fn ROR_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.write(0x501, 0b1000_1001);
 
         // Random opcode with absolute addressing
@@ -1327,9 +1305,8 @@ mod test {
 
     #[test]
     fn SBC_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.a = 30;
         cpu.write(0x501, 10);
         cpu.opcode = 0x0E;
@@ -1342,9 +1319,8 @@ mod test {
 
     #[test]
     fn set_flags_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
 
         cpu.SEC();
         cpu.SED();
@@ -1354,9 +1330,8 @@ mod test {
 
     #[test]
     fn store_test() {
-        let cpu = Rc::new(RefCell::new(Cpu6502::new()));
-        let _bus = bus::Bus::new(cpu.clone());
-        let mut cpu: &mut Cpu6502 = &mut cpu.borrow_mut();
+        let (mut cpu, _) = setup();
+let mut cpu = cpu.borrow_mut();
         cpu.a = 10;
         cpu.x = 15;
         cpu.y = 20;
