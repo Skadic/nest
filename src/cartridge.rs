@@ -26,8 +26,6 @@ impl Cartridge {
             mapper: Rc::new(RefCell::new(Mapper000::new(0, 0))), // This is just a placeholder
         };
 
-
-
         // TODO All of this is pretty weird. If things don't work, I'll come back to this
         #[derive(Default, Debug)]
         struct NesHeader {
@@ -78,7 +76,9 @@ impl Cartridge {
             reader.seek(SeekFrom::Current(512)).expect("Error seeking"); // Skip training information
         }
 
-        // Determine Mapper ID
+        println!("{:?}", header);
+
+        // Determine Mapper ID of the mapper used by the cartridge
         cartridge.mapper_id = ((header.mapper2 >> 4) << 4) | (header.mapper1 >> 4);
 
         // "Discover" File Format
@@ -88,6 +88,8 @@ impl Cartridge {
 
         }
 
+        // Reads the amount of program/character memory banks to the cartridge fields,
+        // resizes the memory vectors to the required size, and reads the memory from the ROM
         if file_type == 1 {
             cartridge.program_banks = header.program_rom_chunks;
             cartridge.program_memory.resize(cartridge.program_banks as usize * 16384, 0);
@@ -104,17 +106,19 @@ impl Cartridge {
 
         match cartridge.mapper_id {
             0 => cartridge.mapper = Rc::new(RefCell::new(Mapper000::new(cartridge.program_banks, cartridge.char_banks))),
-            _ => print!("")
+            _ => unimplemented!("Mapper {} not implemented", cartridge.mapper_id)
         }
 
         cartridge
     }
 
     // These return true, if the cartridge is handling the read/write
+    // The cartridge has priority access to memory, which is handled in the read and write methods of the Bus
 
     /// Read from the main bus
     pub fn cpu_read(&mut self, addr: u16, data: &mut u8) -> bool {
         let mut mapped_addr = 0;
+        // If the mapper says, that the cartridge should handle this read, read the data, otherwise do nothing
         if self.mapper.borrow_mut().cpu_map_read(addr, &mut mapped_addr) {
             *data = self.program_memory[mapped_addr as usize];
             true
@@ -126,6 +130,7 @@ impl Cartridge {
     /// Write to the main bus
     pub fn cpu_write(&mut self, addr: u16, data: u8) -> bool {
         let mut mapped_addr = 0;
+        // If the mapper says, that the cartridge should handle this read, write the data, otherwise do nothing
         if self.mapper.borrow_mut().cpu_map_write(addr, &mut mapped_addr) {
             self.program_memory[mapped_addr as usize] = data;
             true

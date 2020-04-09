@@ -5,6 +5,9 @@ extern crate bitflags;
 extern crate lazy_static;
 
 use crate::cartridge::Cartridge;
+use std::rc::Rc;
+use std::cell::RefCell;
+use crate::ppu2C02::Ppu2C02;
 
 
 mod bus;
@@ -14,14 +17,16 @@ mod mappers;
 mod cartridge;
 
 fn main() {
-    /*let cpu = Rc::new(RefCell::new(cpu6502::Cpu6502::new()));
-    let bus = bus::Bus::new(cpu.clone());
-
+    let cpu = Rc::new(RefCell::new(cpu6502::Cpu6502::new()));
+    let ppu = Rc::new(RefCell::new(Ppu2C02::new()));
+    let bus = bus::Bus::new(cpu.clone(), ppu.clone());
+    /*
     let program = "A9 05 AA A9 06 8E 11 11 6D 11 11";
 
     for (i, b) in parse_program(program).into_iter().enumerate() {
         bus.borrow_mut().cpu_write(i as u16, b);
     }
+
     for instr in cpu6502::disassemble(parse_program(program)).into_iter() {
         println!("{}", instr);
     }
