@@ -1,7 +1,10 @@
-use image::{SubImage, RgbaImage, ImageBuffer, GenericImage, RgbImage};
+use image::{SubImage, RgbaImage, ImageBuffer, GenericImage, RgbImage, Rgba, Pixel};
 use std::rc::Rc;
 use std::collections::HashMap;
 use image::flat::NormalForm::ImagePacked;
+use crate::cpu6502::Cpu6502;
+use crate::cpu6502::Flags6502;
+use image::imageops::FilterType;
 
 type CharacterSheet = HashMap<char, SubImage<Rc<RgbaImage>>>;
 
@@ -17,12 +20,16 @@ pub fn image_to_vec(img: &RgbaImage) -> Vec<u32> {
 
 /// Creates a hashmap of chars to their respective sprite from a sprite sheet
 pub fn create_char_sprites(sheet: &str, char_width: usize, char_height: usize) -> CharacterSheet {
-    let mut img = Rc::new(image::open(sheet).unwrap().into_rgba());
+    let mut img = image::open(sheet).unwrap().into_rgba();
+    // Remove Black
+    img.pixels_mut().for_each(|pix| if *pix == Rgba([0, 0, 0, 255]) { *pix = Rgba([0, 0, 0, 0]) });
+
+    let mut img = Rc::new(img);
+
     let (chars_x, chars_y) = {
         let (w, h) = img.dimensions();
         (w / char_width as u32, h / char_height as u32)
     };
-
     println!("x chars: {}; y chars: {}",  chars_x, chars_y);
 
     let mut sprites = HashMap::new();
@@ -30,13 +37,15 @@ pub fn create_char_sprites(sheet: &str, char_width: usize, char_height: usize) -
     let mut current = ' ';
     'outer: for y in 0u32..chars_y {
         for x in 0u32..chars_x {
-            sprites.insert(current, SubImage::new(
+            let sprite = SubImage::new(
                 Rc::clone(&img),
                 x * char_width as u32,
                 y * char_height as u32,
                 char_width as u32,
                 char_height as u32
-            ));
+            );
+
+            sprites.insert(current, sprite);
 
 
             // ~ is the last character in the font sprite sheet. If that has been handled, stop adding sprites
@@ -79,4 +88,46 @@ pub fn compose_text(text: &str, character_sheet: &CharacterSheet) -> RgbaImage {
     }
 
     buffer
+}
+
+pub fn draw_cpu<T: std::ops::Deref<Target=Cpu6502>>(cpu: T, character_sheet: &CharacterSheet) -> RgbaImage {
+    let (char_w, char_h) = character_sheet[&'a'].to_image().dimensions();
+    let mut registers = RgbaImage::new(16 * char_w, 6 * char_h);
+    registers.copy_from(
+        &compose_text(format!
+             ("STATUS:\nPC: ${:0>4X}\nA: ${:0>2X}\nX: ${:0>2X}\nY: ${:0>2X}\nSP: ${:0>4X}",
+              cpu.get_program_counter(),
+              cpu.get_acc(),
+              cpu.get_x(),
+              cpu.get_y(),
+              cpu.get_stack_pointer()
+             ).as_str(), &character_sheet),
+        0, 0
+    );
+
+    macro_rules! add_flag_char {
+        ($($flag:ident), *) => {
+            {
+                let mut i = 0;
+                $(
+                    let color = if !cpu.get_flag(Flags6502::$flag) {
+                        Rgba([255, 0, 0, 255])
+                    } else {
+                        Rgba([0, 255, 0, 255])
+                    };
+                    let mut sprite : RgbaImage = character_sheet[&stringify!($flag).chars().nth(0).unwrap()].to_image();
+                    sprite.pixels_mut()
+                        .filter(|pix| **pix == Rgba([255, 255, 255, 255]))
+                        .for_each(|pix| Pixel::blend(pix, &color));
+                    registers.copy_from(&sprite, (8 + i) * char_w, 0);
+                    i += 1;
+                )*
+            }
+        }
+    }
+
+    add_flag_char! { C, Z, I, D, B, U, V, N }
+
+
+    registers
 }

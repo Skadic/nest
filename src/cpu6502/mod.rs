@@ -84,6 +84,34 @@ impl Cpu6502 {
         }
     }
 
+    pub fn get_acc(&self) -> u8 {
+        self.a
+    }
+
+    pub fn get_x(&self) -> u8 {
+        self.x
+    }
+
+    pub fn get_y(&self) -> u8 {
+        self.y
+    }
+
+    pub fn get_stack_pointer(&self) -> u16 {
+        self.stkp
+    }
+
+    pub fn set_stack_pointer(&mut self, value: u16) {
+        self.stkp = value;
+    }
+
+    pub fn get_program_counter(&self) -> u16 {
+        self.pc
+    }
+
+    pub fn get_status(&self) -> Flags6502 {
+        self.status
+    }
+
     pub fn connect_bus(&mut self, bus: Rc<RefCell<Bus>>) {
         self.bus = Some(bus);
     }
@@ -100,7 +128,7 @@ impl Cpu6502 {
         self.bus
             .as_ref()
             .expect("cpu not connected to Bus")
-            .borrow_mut()
+            .borrow()
             .cpu_write(addr, data)
     }
 
@@ -141,6 +169,11 @@ impl Cpu6502 {
         }
 
         self.cycles -= 1;
+    }
+
+    /// Returns true if the cpu is not currently in the middle of executing an instruction
+    pub fn complete(&self) -> bool {
+        self.cycles == 0
     }
 
     // Configure the CPU into a known state
