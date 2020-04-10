@@ -255,7 +255,6 @@ impl Cpu6502 {
     }
 }
 
-
 struct Instruction {
     pub name: String,
     pub operate: fn(&mut Cpu6502) -> bool,
@@ -280,21 +279,51 @@ impl Instruction {
 }
 
 pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
+
+    /// Determines if 2 Functions are the same. Used for instructions
     fn cmp_fn(f1: fn(&mut Cpu6502) -> bool, f2: fn(&mut Cpu6502) -> bool) -> bool {
         f1 as usize == f2 as usize
+    }
+
+    fn addressing_mode_name(f: fn(&mut Cpu6502) -> bool) -> &'static str {
+        let cmp = |addr_mode: fn(&mut Cpu6502) -> bool| cmp_fn(f, addr_mode);
+
+        macro_rules! gen_if {
+            ( $($x:ident), *) => {
+                $(
+                    if cmp(Cpu6502::$x) { return stringify!($x)}
+                )*
+            }
+        }
+
+        gen_if! {
+            IMP, IMM, ZP0, ZPX, ZPY, ABS, ABX, ABY, IND, IZX, IZY, REL
+        }
+
+        "XXX"
     }
 
     let mut program: Vec<String> = Vec::new();
 
     let mut i = 0;
     while i < program_bytes.len() {
+        // The buffer to hold the tokens that make up an instruction string
         let mut string_instr_tokens: Vec<String> = Vec::new();
 
-        let instruction = &LOOKUP[program_bytes[i] as usize];
+        // Get the instruction from the lookup table that is identified by the current byte read
+        let instruction : &Instruction = &LOOKUP[program_bytes[i] as usize];
+        // A function that determines if the given addressing mode is equal to the addressing mode of the current instruction
         let mode = |addr_mode: fn(&mut Cpu6502) -> bool| cmp_fn(instruction.addrmode, addr_mode);
+        // Adds the name of the current instruction to the tokens
         string_instr_tokens.push(instruction.name.clone());
+
+
         if mode(Cpu6502::IMP) {
+            // If the addressing mode is implied there is nothing else to do. This if is just here,
+            // so it's clear from reading the code that all addressing modes are handled
         } else if mode(Cpu6502::IMM) {
+            // For immediate addressing, the additional data is 1 additional byte of data, so increase i by 1
+            // And add the data formatted as a hexadecimal number to the tokens
             i += 1;
             string_instr_tokens.push(format!("#${:0>4}", hex::encode(vec![program_bytes[i]])))
         } else if mode(Cpu6502::ZP0)
@@ -302,9 +331,12 @@ pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
             || mode(Cpu6502::ZPY)
             || mode(Cpu6502::REL)
         {
+            // The same as with immediate addressing, but the formatting is a little different
             i += 1;
             string_instr_tokens.push(format!("${:0>4}", hex::encode(vec![program_bytes[i]])))
         } else {
+            // For all other address modes, the supplied data consists of 2 bytes.
+            // Gather them in a vector and convert them to a hexadecimal number
             let mut address = Vec::new();
             i += 1;
             address.push(program_bytes[i]);
@@ -313,7 +345,9 @@ pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
             string_instr_tokens.push(format!("${:0>4}", hex::encode(address)));
         }
 
-        //println!("{}", string_instr_tokens.join(" "));
+        // Add the address mode to the tokens
+        string_instr_tokens.push(format!("({})", addressing_mode_name(instruction.addrmode)));
+
         program.push(string_instr_tokens.join(" "));
         i += 1;
     }

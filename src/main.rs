@@ -8,6 +8,7 @@ use crate::cartridge::Cartridge;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::ppu2C02::Ppu2C02;
+use crate::gfx::nest_app::NestApp;
 
 
 mod bus;
@@ -15,6 +16,7 @@ mod cpu6502;
 mod ppu2C02;
 mod mappers;
 mod cartridge;
+mod gfx;
 
 fn main() {
     let cpu = Rc::new(RefCell::new(cpu6502::Cpu6502::new()));
@@ -37,7 +39,10 @@ fn main() {
 
     println!("{}", bus.borrow().cpu_read(0x1111, false));
     println!("{:?}", cpu.borrow());*/
-    Cartridge::new("Super Mario Bros (E).nes");
+    //Cartridge::new("Super Mario Bros (E).nes");
+    NestApp::test_run();
+
+    //gfx::create_char_sprites("res/font.png", 8);
 }
 
 fn parse_program(program: &str) -> Vec<u8> {

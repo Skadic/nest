@@ -15,7 +15,8 @@ impl Ppu2C02 {
         Ppu2C02 {
             cartridge: None,
             name_table: [[0; 1024]; 2],
-            palette_table: [0; 32]
+            palette_table: [0; 32],
+            //Debug information:
         }
     }
 
