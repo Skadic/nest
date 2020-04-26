@@ -97,9 +97,6 @@ impl Bus {
         }
         *self.system_clock_counter.borrow_mut() += 1;
 
-
-        //Todo THIS IS ONLY FOR TESTING PURPOSES, AS REPEATED CALLS OF BRK DECREMENT THE STACK POINTER AND RUST DOES NOT LIKE UNDERFLOW
-        self.cpu.borrow_mut().set_stack_pointer(10);
     }
 }
 

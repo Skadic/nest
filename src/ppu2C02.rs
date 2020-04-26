@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use crate::cartridge::Cartridge;
 use std::cell::RefCell;
-use image::{Rgba, RgbaImage, ImageBuffer};
+use image::{Rgba, RgbaImage};
 use rand::Rng;
 
 pub struct Ppu2C02 {
@@ -182,7 +182,7 @@ impl Ppu2C02 {
         // Todo temporary fake noise
         let mut rng = rand::thread_rng();
         if ((self.cycle - 1) as u32) < 256 && (self.scan_line as u32) < 240 {
-            self.sprite_screen.put_pixel((self.cycle - 1) as u32, self.scan_line as u32, self.palette_screen[if rng.gen_bool(0.5) { 0x3F } else { 0x30 }]);
+            self.sprite_screen.put_pixel((self.cycle - 1) as u32, self.scan_line as u32, self.palette_screen[rng.gen_range(0x00, 0x3F)]);
         }
         self.cycle += 1;
         // Weird numbers are due to how the NES works

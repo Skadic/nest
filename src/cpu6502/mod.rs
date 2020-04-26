@@ -1,6 +1,7 @@
 use crate::bus::Bus;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::collections::HashMap;
 
 mod addressing_modes;
 mod opcodes;
@@ -18,6 +19,7 @@ bitflags! {
         const N = 0x80; // Negative
     }
 }
+
 
 lazy_static! {
     static ref LOOKUP: [Instruction; 16 * 16] = [
@@ -63,6 +65,7 @@ pub struct Cpu6502 {
     addr_rel: u16,     // Relative memory address
     opcode: u8,        // Opcode of current instruction
     cycles: u8,        // Number or clock cycles left for current instruction
+    cycle_count: usize // The amount of cycles worked by the CPU
 }
 
 #[allow(non_snake_case, unused)]
@@ -73,14 +76,15 @@ impl Cpu6502 {
             a: 0,
             x: 0,
             y: 0,
-            stkp: STACK_POINTER_BASE,
+            stkp: 0xFD,
             pc: 0,
-            status: Flags6502::empty(),
+            status: Flags6502::U | Flags6502::I,
             fetched: 0,
             addr_abs: 0,
             addr_rel: 0,
             opcode: 0,
             cycles: 0,
+            cycle_count: 7
         }
     }
 
@@ -102,6 +106,10 @@ impl Cpu6502 {
 
     pub fn set_stack_pointer(&mut self, value: u16) {
         self.stkp = value;
+    }
+
+    pub fn set_program_counter(&mut self, value: u16) {
+        self.pc = value
     }
 
     pub fn get_program_counter(&self) -> u16 {
@@ -148,6 +156,10 @@ impl Cpu6502 {
         if self.cycles == 0 {
             // Read the next opcode from the memory at the program counter
             self.opcode = self.read(self.pc);
+
+            let (instr, _) = self.disassemble_instr_at(self.pc);
+            println!("${:0>4X}: {:<20} A:{:0>2X}, X:{:0>2X}, Y:{:0>2X}, P:{:0>2X}, SP:{:0>4X}, Cycle: {}", self.pc, instr, self.a, self.x, self.y, self.status.bits(),self.stkp, self.cycle_count);
+
             self.pc += 1;
 
             // Get the instruction specified by the next opcode
@@ -169,6 +181,7 @@ impl Cpu6502 {
         }
 
         self.cycles -= 1;
+        self.cycle_count += 1;
     }
 
     /// Returns true if the cpu is not currently in the middle of executing an instruction
@@ -277,7 +290,7 @@ impl Cpu6502 {
         false
     }
 
-    /// Fetches data from the given address
+    /// Fetches data in accordance with the current addressing mode
     fn fetch(&mut self) -> u8 {
         // If the addressing mode is 'implied', then there is no data to fetch
         // In this case, the fetched data is the data in the accumulator (see the IMP addressing mode)
@@ -285,6 +298,118 @@ impl Cpu6502 {
             self.fetched = self.read(self.addr_abs);
         }
         self.fetched
+    }
+
+    /// Assembles the instruction starting at the given address
+    /// Returns a tuple of the disassembled instruction, plus the address of the next instruction
+    pub fn disassemble_instr_at(&self, addr: u16) -> (String, u16) {
+        /// Determines if 2 Functions are the same. Used for instructions
+        fn cmp_fn(f1: fn(&mut Cpu6502) -> bool, f2: fn(&mut Cpu6502) -> bool) -> bool {
+            f1 as usize == f2 as usize
+        }
+
+        /// Used to get an addressing mode's name from its function pointer
+        fn addressing_mode_name(f: fn(&mut Cpu6502) -> bool) -> &'static str {
+            let cmp = |addr_mode: fn(&mut Cpu6502) -> bool| cmp_fn(f, addr_mode);
+
+            macro_rules! gen_if {
+            ( $($x:ident), *) => {
+                    $(
+                        if cmp(Cpu6502::$x) { return stringify!($x)}
+                    )*
+                }
+            }
+
+            gen_if! {
+                IMP, IMM, ZP0, ZPX, ZPY, ABS, ABX, ABY, IND, IZX, IZY, REL
+            }
+
+            "XXX"
+        }
+
+        let mut offset = 0;
+        // The buffer to hold the tokens that make up an instruction string
+        let mut string_instr_tokens: Vec<String> = Vec::new();
+
+        // Get the instruction from the lookup table that is identified by the current byte read
+        let instruction : &Instruction = &LOOKUP[self.read(addr + offset) as usize];
+
+        // A function that determines if the given addressing mode is equal to the addressing mode of the current instruction
+        let mode = |addr_mode: fn(&mut Cpu6502) -> bool| cmp_fn(instruction.addrmode, addr_mode);
+        // Adds the name of the current instruction to the tokens
+        string_instr_tokens.push(instruction.name.clone());
+
+
+        if mode(Cpu6502::IMP) {
+            // If the addressing mode is implied there is nothing else to do. This if is just here,
+            // so it's clear from reading the code that all addressing modes are handled
+            assert_eq!(offset, 0, "Address mode implied but offset not zero")
+        } else if mode(Cpu6502::IMM) {
+            // For immediate addressing, the additional data is 1 additional byte of data, so
+            // add the data formatted as a hexadecimal number to the tokens
+            offset += 1;
+            string_instr_tokens.push(format!("#${:0>2X}", self.read(addr + offset)));
+            assert_eq!(offset, 1, "Address mode immediate but offset not one");
+        } else if mode(Cpu6502::ZP0)
+            || mode(Cpu6502::ZPX)
+            || mode(Cpu6502::ZPY)
+            || mode(Cpu6502::REL)
+        {
+            // The same as with immediate addressing, but the formatting is a little different
+            offset += 1;
+            string_instr_tokens.push(format!("${:0>4X}", self.read(addr + offset)));
+            assert_eq!(offset, 1, "Address mode zero page or relative but offset not one");
+        } else {
+            // For all other address modes, the supplied data consists of 2 bytes.
+            // Gather them in a vector and convert them to a hexadecimal number
+            let mut address = Vec::new();
+            offset += 1;
+            address.push(self.read(addr + offset));
+            offset += 1;
+            address.push(self.read(addr + offset));
+            address.reverse();
+            string_instr_tokens.push(format!("${:0>4}", hex::encode_upper(address)));
+            assert_eq!(offset, 2, "Offset not two");
+        }
+
+        offset += 1;
+
+        if addr >= 0xB000 && addr < 0xD000 {
+            //println!("opcode: {:0>2X}, address mode: {}, start addr: {:0>4X}, next addr: {:0>4X}", self.read(addr), addressing_mode_name(instruction.addrmode), addr, addr + offset);
+        }
+
+        // Add the address mode to the tokens
+        string_instr_tokens.push(format!("({})", addressing_mode_name(instruction.addrmode)));
+
+        (string_instr_tokens.join(" "), addr + offset)
+    }
+
+    pub fn disassemble_next(&self, n: usize) -> Vec<(u16, String)>{
+        let mut program = Vec::new();
+        // The starting address of the next instruction
+        let mut next_addr = self.pc;
+        for _ in 0..n {
+            let (instr, next) = self.disassemble_instr_at(next_addr);
+            program.push((next_addr, instr));
+            next_addr = next;
+        }
+
+        program
+    }
+
+    pub fn disassemble_next_as_string(&self, n: usize) -> String {
+        self.disassemble_next(n).into_iter().map(|(addr, instr)| format!("${:0>4X}: {}", addr, instr)).collect::<Vec<String>>().join("\n")
+    }
+
+    pub fn disassemble_range(&self, from: u16, to: u16) -> HashMap<u16, String> {
+        let mut current_addr = from;
+        let mut disassembly = HashMap::new();
+        while current_addr < to {
+            let (instr, next_addr) = self.disassemble_instr_at(current_addr);
+            disassembly.insert(current_addr, instr);
+            current_addr = next_addr;
+        }
+        disassembly
     }
 }
 
@@ -311,7 +436,7 @@ impl Instruction {
     }
 }
 
-pub fn disassemble(program_bytes: Vec<u8>) -> Vec<String> {
+pub fn disassemble_program(program_bytes: Vec<u8>) -> Vec<String> {
 
     /// Determines if 2 Functions are the same. Used for instructions
     fn cmp_fn(f1: fn(&mut Cpu6502) -> bool, f2: fn(&mut Cpu6502) -> bool) -> bool {

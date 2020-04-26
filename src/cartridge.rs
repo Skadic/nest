@@ -3,7 +3,7 @@ use std::io::{Seek, SeekFrom, Read, BufReader};
 use crate::mappers::Mapper;
 use std::rc::Rc;
 use crate::mappers::mapper_000::Mapper000;
-use bitflags::_core::cell::RefCell;
+use bitflags::_core::cell::{RefCell};
 
 pub struct Cartridge {
     program_memory: Vec<u8>,
@@ -16,7 +16,7 @@ pub struct Cartridge {
 
 impl Cartridge {
 
-    pub fn new(file_name: &str) -> Self {
+    pub fn new(file_name: &str) -> Rc<RefCell<Self>> {
         let mut cartridge = Cartridge {
             program_memory: vec![],
             char_memory: vec![],
@@ -82,7 +82,7 @@ impl Cartridge {
         cartridge.mapper_id = ((header.mapper2 >> 4) << 4) | (header.mapper1 >> 4);
 
         // "Discover" File Format
-        let mut file_type = 1;
+        let file_type = 1;
 
         if file_type == 0 {
 
@@ -109,7 +109,7 @@ impl Cartridge {
             _ => unimplemented!("Mapper {} not implemented", cartridge.mapper_id)
         }
 
-        cartridge
+        Rc::new(RefCell::new(cartridge))
     }
 
     // These return true, if the cartridge is handling the read/write
@@ -140,7 +140,7 @@ impl Cartridge {
     }
 
     /// Read from the PPU bus
-    pub fn ppu_read(&mut self, addr: u16, data: &mut u8) -> bool {
+    pub fn ppu_read(&self, addr: u16, data: &mut u8) -> bool {
         let mut mapped_addr = 0;
         if self.mapper.borrow_mut().ppu_map_read(addr, &mut mapped_addr) {
             *data = self.char_memory[mapped_addr as usize];

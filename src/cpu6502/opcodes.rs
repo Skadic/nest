@@ -2,6 +2,7 @@ use crate::cpu6502::{Cpu6502, STACK_POINTER_BASE, IRQ_PROGRAM_COUNTER};
 use crate::cpu6502::Flags6502;
 use crate::cpu6502::LOOKUP;
 use std::num::Wrapping;
+use std::ops::{Add, Sub};
 
 // Opcodes. These return true if they *potentially* need another clock cycle. false otherwise
 // They also set the flags accordingly
@@ -127,17 +128,17 @@ impl Cpu6502 {
         false
     }
 
-    /// Branch if overflowed
+    /// Branch if not overflowed
     pub fn BVC(&mut self) -> bool {
-        if self.get_flag(Flags6502::V) {
+        if !self.get_flag(Flags6502::V) {
             self.branch()
         }
         false
     }
 
-    /// Branch if not overflowed
+    /// Branch if overflowed
     pub fn BVS(&mut self) -> bool {
-        if !self.get_flag(Flags6502::V) {
+        if self.get_flag(Flags6502::V) {
             self.branch()
         }
         false
@@ -246,7 +247,7 @@ impl Cpu6502 {
     pub fn DEC(&mut self) -> bool {
         self.fetch();
 
-        let value = self.fetched - 1;
+        let value = wrap_sub(self.fetched, 1);
         self.write(self.addr_abs, value);
 
         self.set_flag(Flags6502::Z, value == 0);
@@ -257,7 +258,7 @@ impl Cpu6502 {
 
     /// Decrements the X-register by 1
     pub fn DEX(&mut self) -> bool {
-        self.x -= 1;
+        self.x = wrap_sub(self.x, 1);
         self.set_flag(Flags6502::Z, self.x == 0);
         self.set_flag(Flags6502::N, (self.x & 0x80) > 0);
         false
@@ -265,7 +266,7 @@ impl Cpu6502 {
 
     /// Decrements the Y register by 1
     pub fn DEY(&mut self) -> bool {
-        self.y -= 1;
+        self.y = wrap_sub(self.y, 1);
         self.set_flag(Flags6502::Z, self.y == 0);
         self.set_flag(Flags6502::N, (self.y & 0x80) > 0);
         false
@@ -284,7 +285,7 @@ impl Cpu6502 {
     pub fn INC(&mut self) -> bool {
         self.fetch();
 
-        let value = self.fetched + 1;
+        let value = wrap_add(self.fetched, 1);
         self.write(self.addr_abs, value);
 
         self.set_flag(Flags6502::Z, value == 0);
@@ -295,7 +296,7 @@ impl Cpu6502 {
 
     /// Increments the X-register by 1
     pub fn INX(&mut self) -> bool {
-        self.x += 1;
+        self.x = wrap_add(self.x, 1);
         self.set_flag(Flags6502::Z, self.x == 0);
         self.set_flag(Flags6502::N, (self.x & 0x80) > 0);
         false
@@ -303,7 +304,7 @@ impl Cpu6502 {
 
     /// Increments the Y register by 1
     pub fn INY(&mut self) -> bool {
-        self.y += 1;
+        self.y = wrap_add(self.y, 1);
         self.set_flag(Flags6502::Z, self.y == 0);
         self.set_flag(Flags6502::N, (self.y & 0x80) > 0);
         false
@@ -495,7 +496,7 @@ impl Cpu6502 {
         let lo = self.read(STACK_POINTER_BASE + self.stkp) as u16;
         self.stkp += 1;
         let hi = self.read(STACK_POINTER_BASE + self.stkp) as u16;
-        self.pc = (hi << 8) | lo;
+        self.pc = ((hi << 8) | lo) + 1;
         false
     }
 
@@ -637,6 +638,16 @@ impl Cpu6502 {
     pub fn is_implied(&self) -> bool {
         LOOKUP[self.opcode as usize].addrmode as usize == Self::IMP as usize
     }
+}
+
+#[inline(always)]
+fn wrap_add(a: u8, b: u8) -> u8 {
+    (Wrapping(a) + Wrapping(b)).0
+}
+
+#[inline(always)]
+fn wrap_sub(a: u8, b: u8) -> u8 {
+    (Wrapping(a) - Wrapping(b)).0
 }
 
 #[allow(non_snake_case)]

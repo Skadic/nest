@@ -4,11 +4,9 @@ extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
 
-use crate::cartridge::Cartridge;
-use std::rc::Rc;
-use std::cell::RefCell;
 use crate::ppu2C02::Ppu2C02;
 use crate::gfx::nest_app;
+use crate::cpu6502::Cpu6502;
 
 
 mod bus;
@@ -19,9 +17,7 @@ mod cartridge;
 mod gfx;
 
 fn main() {
-    let cpu = cpu6502::Cpu6502::new();
-    let ppu = Ppu2C02::new();
-    let bus = bus::Bus::new(cpu, ppu);
+    let _bus = bus::Bus::new(Cpu6502::new(), Ppu2C02::new());
     /*
     let program = "A9 05 AA A9 06 8E 11 11 6D 11 11";
 
@@ -42,7 +38,8 @@ fn main() {
     //Cartridge::new("Super Mario Bros (E).nes");
     nest_app::test_run2();
 
-    //gfx::create_char_sprites("res/font.png", 8);
+
+
 }
 
 fn parse_program(program: &str) -> Vec<u8> {
