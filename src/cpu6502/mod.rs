@@ -45,6 +45,9 @@ lazy_static! {
 /// The 6502's hardcoded stack pointer base location
 const STACK_POINTER_BASE: u16 = 0x0100;
 
+/// The location of the new program counter when a reset happens
+const RESET_PROGRAM_COUNTER: u16 = 0xFFFC;
+
 /// The location of the new program counter when an Interrupt Request happens
 const IRQ_PROGRAM_COUNTER: u16 = 0xFFFE;
 
@@ -78,7 +81,7 @@ impl Cpu6502 {
             y: 0,
             stkp: 0xFD,
             pc: 0,
-            status: Flags6502::U | Flags6502::I,
+            status: Flags6502::U | Flags6502::I | Flags6502::B,
             fetched: 0,
             addr_abs: 0,
             addr_rel: 0,
@@ -189,16 +192,28 @@ impl Cpu6502 {
         self.cycles == 0
     }
 
+    /// Pushes a given byte to the stack
+    pub fn push_stack(&mut self, data: u8) {
+        self.write(STACK_POINTER_BASE + self.stkp, data);
+        self.stkp -= 1;
+    }
+
+    /// Pops a byte off the stack
+    pub fn pop_stack(&mut self) -> u8 {
+        self.stkp += 1;
+        self.read(STACK_POINTER_BASE + self.stkp)
+    }
+
     // Configure the CPU into a known state
     pub(crate) fn reset(&mut self) {
         self.a = 0;
         self.x = 0;
         self.y = 0;
         self.stkp = 0xFD;
-        self.status = Flags6502::empty() | Flags6502::U;
+        self.status = Flags6502::U;
 
         // Hardcoded address that contains the address the program counter should be set to, in case of a reset
-        self.addr_abs = 0xFFFC;
+        self.addr_abs = RESET_PROGRAM_COUNTER;
         let lo = self.read(self.addr_abs) as u16;
         let hi = self.read(self.addr_abs + 1) as u16;
 
@@ -216,13 +231,8 @@ impl Cpu6502 {
     fn irq(&mut self) {
         if !self.get_flag(Flags6502::I) {
             // Save the Program counter to the stack
-            self.write(
-                STACK_POINTER_BASE + self.stkp,
-                ((self.pc >> 8) & 0x00FF) as u8,
-            );
-            self.stkp -= 1;
-            self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
-            self.stkp -= 1;
+            self.push_stack(((self.pc >> 8) & 0x00FF) as u8);
+            self.push_stack((self.pc & 0x00FF) as u8);
 
             // Set flags accordingly
             self.set_flag(Flags6502::B, false);
@@ -230,8 +240,7 @@ impl Cpu6502 {
             self.set_flag(Flags6502::I, true);
 
             // Save the status register to stack
-            self.write(STACK_POINTER_BASE + self.stkp, self.status.bits());
-            self.stkp -= 1;
+            self.push_stack(self.status.bits());
 
             // The value of the new program counter sits at this hardcoded address
             self.addr_abs = IRQ_PROGRAM_COUNTER;
@@ -247,13 +256,8 @@ impl Cpu6502 {
     /// Non-maskable interrupt request signal
     fn nmi(&mut self) {
         // Save the Program counter to the stack
-        self.write(
-            STACK_POINTER_BASE + self.stkp,
-            ((self.pc >> 8) & 0x00FF) as u8,
-        );
-        self.stkp -= 1;
-        self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
-        self.stkp -= 1;
+        self.push_stack((self.pc >> 8) as u8);
+        self.push_stack((self.pc & 0x00FF) as u8);
 
         // Set flags accordingly
         self.set_flag(Flags6502::B, false);
@@ -261,8 +265,7 @@ impl Cpu6502 {
         self.set_flag(Flags6502::I, true);
 
         // Save the status register to stack
-        self.write(STACK_POINTER_BASE + self.stkp, self.status.bits());
-        self.stkp -= 1;
+        self.push_stack(self.status.bits());
 
         // The value of the new program counter sits at this hardcoded address
         self.addr_abs = NMI_PROGRAM_COUNTER;
@@ -518,6 +521,43 @@ pub fn disassemble_program(program_bytes: Vec<u8>) -> Vec<String> {
 mod test {
     use crate::cpu6502::Flags6502;
     use crate::cpu6502::{Cpu6502};
+    use crate::ppu2C02::Ppu2C02;
+    use crate::bus::Bus;
+
+    #[test]
+    fn init_test() {
+        let cpu = Cpu6502::new();
+
+        assert_eq!(cpu.status, Flags6502::I | Flags6502::B | Flags6502::U , "Initial config incorrect. Only I B and U should be set");
+        assert_eq!(cpu.a, 0, "Accumulator != 0");
+        assert_eq!(cpu.x, 0, "X Register != 0");
+        assert_eq!(cpu.y, 0, "Y Register != 0");
+        assert_eq!(cpu.stkp, 0xFD, "Stack Pointer != 0xFD");
+    }
+
+    #[test]
+    fn reset_test() {
+        let mut bus = {
+            let cpu = Cpu6502::new();
+            let ppu = Ppu2C02::new();
+            Bus::new(cpu, ppu)
+        };
+        let bus_borrow = bus.borrow();
+        let mut cpu = bus_borrow.cpu_mut();
+
+        cpu.status = Flags6502::C | Flags6502::V;
+        cpu.a = 123;
+        cpu.x = 012;
+        cpu.y = 111;
+
+        cpu.reset();
+
+        assert_eq!(cpu.status, Flags6502::U , "Initial config incorrect. Only U should be set");
+        assert_eq!(cpu.a, 0, "Accumulator != 0");
+        assert_eq!(cpu.x, 0, "X Register != 0");
+        assert_eq!(cpu.y, 0, "Y Register != 0");
+        assert_eq!(cpu.stkp, 0xFD, "Stack Pointer != 0xFD");
+    }
 
     #[test]
     fn flags_test() {

@@ -161,14 +161,13 @@ impl Cpu6502 {
         self.pc += 1;
 
         self.set_flag(Flags6502::I, true);
-        self.write(STACK_POINTER_BASE + self.stkp, (self.pc >> 8) as u8);
-        self.stkp -= 1;
-        self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
-        self.stkp -= 1;
+        // Store the high and low bytes of the program counter to the stack
+        self.push_stack((self.pc >> 8) as u8);
+        self.push_stack((self.pc & 0x00FF) as u8);
 
         self.set_flag(Flags6502::B, true);
-        self.write(STACK_POINTER_BASE + self.stkp, self.status.bits());
-        self.stkp -= 1;
+        // Push status register to the stack with the B flag set
+        self.push_stack(self.status.bits());
         self.set_flag(Flags6502::B, false);
 
         self.pc = self.read(IRQ_PROGRAM_COUNTER) as u16
@@ -651,6 +650,7 @@ fn wrap_sub(a: u8, b: u8) -> u8 {
     (Wrapping(a) - Wrapping(b)).0
 }
 
+/*
 #[allow(non_snake_case)]
 #[cfg(test)]
 mod test {
@@ -1417,3 +1417,4 @@ let mut cpu = cpu.borrow_mut();
         Cpu6502::new().XXX();
     }
 }
+*/

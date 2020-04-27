@@ -34,7 +34,7 @@ impl Bus {
         self.cpu.borrow()
     }
 
-    pub fn cpu_mut(&mut self) -> RefMut<Cpu6502> {
+    pub fn cpu_mut(&self) -> RefMut<Cpu6502> {
         self.cpu.borrow_mut()
     }
 
