@@ -399,7 +399,8 @@ impl Cpu6502 {
 
     /// Push processor status on stack
     pub fn PHP(&mut self) -> bool {
-        self.write(STACK_POINTER_BASE + self.stkp, self.status.bits());
+        // For PHP the status register is pushed to the stack along with the Interrupt flag
+        self.write(STACK_POINTER_BASE + self.stkp, (self.status | Flags6502::I).bits());
         self.stkp -= 1;
         false
     }
