@@ -81,7 +81,7 @@ impl Cpu6502 {
             y: 0,
             stkp: 0xFD,
             pc: 0,
-            status: Flags6502::U | Flags6502::I | Flags6502::B,
+            status: Flags6502::I,
             fetched: 0,
             addr_abs: 0,
             addr_rel: 0,
@@ -299,6 +299,8 @@ impl Cpu6502 {
         // In this case, the fetched data is the data in the accumulator (see the IMP addressing mode)
         if LOOKUP[self.opcode as usize].addrmode as usize != Self::IMP as usize {
             self.fetched = self.read(self.addr_abs);
+        } else {
+            self.fetched = self.a;
         }
         self.fetched
     }
@@ -344,15 +346,19 @@ impl Cpu6502 {
 
 
         if mode(Cpu6502::IMP) {
+            // BRK is a special case, as it's an implied address mode instruction
+            // but unlike the other such instructions, it's a 2-byte instructions instead of 1
+            if instruction.operate as usize == Self::BRK as usize {
+                offset += 1;
+            }
+
             // If the addressing mode is implied there is nothing else to do. This if is just here,
             // so it's clear from reading the code that all addressing modes are handled
-            assert_eq!(offset, 0, "Address mode implied but offset not zero")
         } else if mode(Cpu6502::IMM) {
             // For immediate addressing, the additional data is 1 additional byte of data, so
             // add the data formatted as a hexadecimal number to the tokens
             offset += 1;
             string_instr_tokens.push(format!("#${:0>2X}", self.read(addr + offset)));
-            assert_eq!(offset, 1, "Address mode immediate but offset not one");
         } else if mode(Cpu6502::ZP0)
             || mode(Cpu6502::ZPX)
             || mode(Cpu6502::ZPY)
@@ -361,7 +367,6 @@ impl Cpu6502 {
             // The same as with immediate addressing, but the formatting is a little different
             offset += 1;
             string_instr_tokens.push(format!("${:0>4X}", self.read(addr + offset)));
-            assert_eq!(offset, 1, "Address mode zero page or relative but offset not one");
         } else {
             // For all other address modes, the supplied data consists of 2 bytes.
             // Gather them in a vector and convert them to a hexadecimal number
@@ -372,7 +377,6 @@ impl Cpu6502 {
             address.push(self.read(addr + offset));
             address.reverse();
             string_instr_tokens.push(format!("${:0>4}", hex::encode_upper(address)));
-            assert_eq!(offset, 2, "Offset not two");
         }
 
         offset += 1;
@@ -528,7 +532,7 @@ mod test {
     fn init_test() {
         let cpu = Cpu6502::new();
 
-        assert_eq!(cpu.status, Flags6502::I | Flags6502::B | Flags6502::U , "Initial config incorrect. Only I B and U should be set");
+        assert_eq!(cpu.status, Flags6502::I , "Initial config incorrect. Only I should be set");
         assert_eq!(cpu.a, 0, "Accumulator != 0");
         assert_eq!(cpu.x, 0, "X Register != 0");
         assert_eq!(cpu.y, 0, "Y Register != 0");
@@ -562,7 +566,7 @@ mod test {
     #[test]
     fn flags_test() {
         let mut cpu = Cpu6502::new();
-
+        cpu.status = Flags6502::from_bits(0x00).unwrap();
         cpu.set_flag(Flags6502::C, true);
         assert_eq!(cpu.status, Flags6502::C);
 

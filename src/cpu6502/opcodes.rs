@@ -166,9 +166,11 @@ impl Cpu6502 {
         self.push_stack((self.pc & 0x00FF) as u8);
 
         self.set_flag(Flags6502::B, true);
+        self.set_flag(Flags6502::U, true);
         // Push status register to the stack with the B flag set
         self.push_stack(self.status.bits());
         self.set_flag(Flags6502::B, false);
+        self.set_flag(Flags6502::U, false);
 
         self.pc = self.read(IRQ_PROGRAM_COUNTER) as u16
             | ((self.read(IRQ_PROGRAM_COUNTER + 1) as u16) << 8);
@@ -319,10 +321,8 @@ impl Cpu6502 {
     pub fn JSR(&mut self) -> bool {
         // Write current program counter to stack
         self.pc -= 1;
-        self.write(STACK_POINTER_BASE + self.stkp, (self.pc >> 8) as u8);
-        self.stkp -= 1;
-        self.write(STACK_POINTER_BASE + self.stkp, (self.pc & 0x00FF) as u8);
-        self.stkp -= 1;
+        self.push_stack((self.pc >> 8) as u8);
+        self.push_stack((self.pc & 0x00FF) as u8);
 
         // Jump to new address
         self.pc = self.addr_abs;
@@ -391,23 +391,20 @@ impl Cpu6502 {
 
     // Push accumulator to the stack
     pub fn PHA(&mut self) -> bool {
-        self.write(STACK_POINTER_BASE + self.stkp, self.a);
-        self.stkp -= 1;
+        self.push_stack(self.a);
         false
     }
 
     /// Push processor status on stack
     pub fn PHP(&mut self) -> bool {
-        // For PHP the status register is pushed to the stack along with the Interrupt flag
-        self.write(STACK_POINTER_BASE + self.stkp, (self.status | Flags6502::I).bits());
-        self.stkp -= 1;
+        // For PHP the status register is pushed to the stack along with the B and U flags
+        self.push_stack((self.status | Flags6502::B | Flags6502::U).bits());
         false
     }
 
     // Pop off the stack into the accumulator
     pub fn PLA(&mut self) -> bool {
-        self.stkp += 1;
-        self.a = self.read(STACK_POINTER_BASE + self.stkp);
+        self.a = self.pop_stack();
         self.set_flag(Flags6502::Z, self.a == 0);
         self.set_flag(Flags6502::N, (self.a & 0x80) > 0);
         false
@@ -415,8 +412,7 @@ impl Cpu6502 {
 
     /// Pull processor status from stack
     pub fn PLP(&mut self) -> bool {
-        self.stkp += 1;
-        self.status = Flags6502::from_bits(self.read(STACK_POINTER_BASE + self.stkp)).unwrap();
+        self.status = Flags6502::from_bits(self.pop_stack()).unwrap();
         self.set_flag(Flags6502::U, true);
         false
     }
@@ -475,15 +471,12 @@ impl Cpu6502 {
     /// Return from interrupt.
     /// Get the status register and the program counter from stack
     pub fn RTI(&mut self) -> bool {
-        self.stkp += 1;
-        self.status = Flags6502::from_bits(self.read(STACK_POINTER_BASE + self.stkp)).unwrap();
+        self.status = Flags6502::from_bits(self.pop_stack()).unwrap();
         self.status &= !Flags6502::B;
         self.status &= !Flags6502::U;
 
-        self.stkp += 1;
-        let lo = self.read(STACK_POINTER_BASE + self.stkp) as u16;
-        self.stkp += 1;
-        let hi = self.read(STACK_POINTER_BASE + self.stkp) as u16;
+        let lo = self.pop_stack() as u16;
+        let hi = self.pop_stack() as u16;
         self.pc = (hi << 8) | lo;
 
         false
@@ -492,10 +485,8 @@ impl Cpu6502 {
     /// Return from Subroutine
     /// Returns to a saved program counter after jumping there (see JSR)
     pub fn RTS(&mut self) -> bool {
-        self.stkp += 1;
-        let lo = self.read(STACK_POINTER_BASE + self.stkp) as u16;
-        self.stkp += 1;
-        let hi = self.read(STACK_POINTER_BASE + self.stkp) as u16;
+        let lo = self.pop_stack() as u16;
+        let hi = self.pop_stack() as u16;
         self.pc = ((hi << 8) | lo) + 1;
         false
     }
@@ -650,771 +641,1471 @@ fn wrap_sub(a: u8, b: u8) -> u8 {
     (Wrapping(a) - Wrapping(b)).0
 }
 
-/*
 #[allow(non_snake_case)]
 #[cfg(test)]
 mod test {
-    use crate::cpu6502::Flags6502;
-    use crate::cpu6502::{Cpu6502, IRQ_PROGRAM_COUNTER, STACK_POINTER_BASE};
-
-    use crate::bus;
-    use std::cell::{RefCell, RefMut};
+    use std::cell::RefCell;
     use std::rc::Rc;
     use crate::bus::Bus;
+    use crate::cpu6502::{Cpu6502, Flags6502, IRQ_PROGRAM_COUNTER};
     use crate::ppu2C02::Ppu2C02;
 
-    fn setup() -> (Rc<RefCell<Cpu6502>>, Rc<RefCell<Bus>>) {
-        let cpu : Rc<RefCell<Cpu6502>> = Rc::new(
-            RefCell::new(Cpu6502::new()));
-        let ppu: Rc<RefCell<Ppu2C02>> = Rc::new(
-            RefCell::new(Ppu2C02::new())
-        );
-        let bus: Rc<RefCell<Bus>> = Bus::new(cpu.clone(), ppu.clone());
-        
-        (cpu, bus)
+    const START_PC: u16 = 0x0110;
+    const START_ADDR_ABS: u16 = 0x0080;
+
+    macro_rules! check_flag {
+        ($status:ident, C, true)   => { assert_eq!($status.contains(Flags6502::C), true, "Carry flag is clear, despite overflow happening"); };
+        ($status:ident, C, false)  => { assert_eq!($status.contains(Flags6502::C), false, "Carry flag is set, despite no overflow happening"); };
+        ($status:ident, Z, true)   => { assert_eq!($status.contains(Flags6502::Z), true, "Zero flag is clear, despite result being zero"); };
+        ($status:ident, Z, false)  => { assert_eq!($status.contains(Flags6502::Z), false, "Zero flag is set, despite result not being zero"); };
+        ($status:ident, I, true)   => { assert_eq!($status.contains(Flags6502::I), true, "Interrupt Disable flag is clear"); };
+        ($status:ident, I, false)  => { assert_eq!($status.contains(Flags6502::I), false, "Interrupt Disable flag is set"); };
+        ($status:ident, D, true)   => { assert_eq!($status.contains(Flags6502::D), true, "Decimal mode flag is clear"); };
+        ($status:ident, D, false)  => { assert_eq!($status.contains(Flags6502::D), false, "Decimal mode flag is set"); };
+        ($status:ident, B, true)   => { assert_eq!($status.contains(Flags6502::B), true, "Break flag is clear"); };
+        ($status:ident, B, false)  => { assert_eq!($status.contains(Flags6502::B), false, "Break flag is set"); };
+        ($status:ident, U, true)   => { assert_eq!($status.contains(Flags6502::U), true, "Unused flag is clear"); };
+        ($status:ident, U, false)  => { assert_eq!($status.contains(Flags6502::U), false, "Unused flag is set"); };
+        ($status:ident, V, true)   => { assert_eq!($status.contains(Flags6502::V), true, "Overflow flag is clear, despite incorrect overflow happening"); };
+        ($status:ident, V, false)  => { assert_eq!($status.contains(Flags6502::V), false, "Overflow flag flag is set, despite no incorrect overflow happening"); };
+        ($status:ident, N, true)   => { assert_eq!($status.contains(Flags6502::N), true, "Negative flag is clear, despite result being negative"); };
+        ($status:ident, N, false)  => { assert_eq!($status.contains(Flags6502::N), false, "Negative flag is set, despite result being positive"); };
     }
-    
+
+    /// Tests the branch instructions.
+    /// Since every test is basically the same
+    /// $flag is the flag to be tested before branching
+    /// $instr is the instruction to execute
+    /// if the boolean is true, then the instruction should branch when the flag is set
+    /// if it's false, the instruction should branch when the flag is clear
+    macro_rules! branch_test {
+        ($flag:ident, $instr:ident, true) => {
+            let bus = setup();
+            let bus_ref = bus.borrow();
+
+            bus_ref.cpu_mut().addr_rel = 0x0010;
+
+            bus_ref.cpu_mut().status = Flags6502::empty();
+            bus_ref.cpu_mut().$instr();
+            assert_eq!(bus_ref.cpu().pc, START_PC, "Branched, despite {} flag being clear", stringify!($flag));
+
+            bus_ref.cpu_mut().status = Flags6502::$flag;
+            bus_ref.cpu_mut().$instr();
+            assert_eq!(bus_ref.cpu().pc, START_PC + 0x0010, "Did not branch, despite {} flag being set", stringify!($flag));
+        };
+        ($flag:ident, $instr:ident, false) => {
+            let bus = setup();
+            let bus_ref = bus.borrow();
+
+            bus_ref.cpu_mut().addr_rel = 0x0010;
+
+            bus_ref.cpu_mut().status = Flags6502::$flag;
+            bus_ref.cpu_mut().$instr();
+            assert_eq!(bus_ref.cpu().pc, START_PC, "Branched, despite {} flag being set", stringify!($flag));
+
+            bus_ref.cpu_mut().status = Flags6502::empty();
+            bus_ref.cpu_mut().$instr();
+            assert_eq!(bus_ref.cpu().pc, START_PC + 0x0010, "Did not branch, despite {} flag being clear", stringify!($flag));
+        };
+    }
+
+    /// Tests whether the instructions that set and clear instructions work
+    macro_rules! flag_set_test {
+        ($flag:ident, $instr:ident, true) => {
+            let bus = setup();
+            let bus_ref = bus.borrow();
+            bus_ref.cpu_mut().set_flag(Flags6502::$flag, false);
+            bus_ref.cpu_mut().$instr();
+            assert!(bus_ref.cpu().get_flag(Flags6502::$flag), "{} flag clear, but should be set");
+        };
+        ($flag:ident, $instr:ident, false) => {
+            let bus = setup();
+            let bus_ref = bus.borrow();
+            bus_ref.cpu_mut().set_flag(Flags6502::$flag, true);
+            bus_ref.cpu_mut().$instr();
+            assert!(!bus_ref.cpu().get_flag(Flags6502::$flag), "{} flag set, but should be cleared");
+        };
+    }
+
+    /// Creates a bus for usage in tests
+    /// The PC is initialized to 0x0100 and the addressing mode is immediate
+    /// The absolute address to be read by fetch is initialized to 0x0080
+    fn setup() -> Rc<RefCell<Bus>> {
+        let mut bus = {
+            let cpu = Cpu6502::new();
+            let ppu = Ppu2C02::new();
+            Bus::new(cpu, ppu)
+        };
+        {
+            let mut bus_ref = bus.borrow_mut();
+            // So that the addressing mode of the current instruction is "immediate"
+            bus_ref.cpu_mut().opcode = 0x09;
+            bus_ref.cpu_mut().pc = START_PC;
+            bus_ref.cpu_mut().addr_abs = START_ADDR_ABS;
+        }
+        bus
+    }
+
+    #[test]
+    fn branch_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        bus_ref.cpu_mut().addr_rel = 0x0010;
+
+        bus_ref.cpu_mut().branch();
+
+        assert_eq!(bus_ref.cpu().pc, START_PC + 0x0010, "Branched to wrong address");
+    }
+
     #[test]
     fn ADC_test() {
-        let (mut cpu, _) = setup();
-        let mut cpu = cpu.borrow_mut();
-        
-        cpu.a = 5;
-        cpu.IMP();
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        cpu.addr_abs = 0x500;
-        cpu.STA();
-        cpu.ADC();
-        assert_eq!(cpu.a, 10, "Addition failed");
-        assert_eq!(cpu.status, Flags6502::empty(), "Status does not match");
+        bus_ref.cpu_write(START_ADDR_ABS, 10);
+        bus_ref.cpu_mut().a = 30;
 
-        // Carry check
-        cpu.a = 255;
-        cpu.ADC();
-        assert_eq!(cpu.a, 4, "Addition failed");
-        assert_eq!(cpu.status, Flags6502::C, "Status does not match");
+        bus_ref.cpu_mut().ADC();
 
-        cpu.CLC();
+        let status = bus_ref.cpu().status;
 
-        // Overflow check. As 130 is out of the [-128, 127] range, it overflows into the negative. Thus the N flag should be set
-        cpu.a = 125;
-        cpu.ADC();
-        assert_eq!(cpu.a, 130, "Addition failed");
-        assert_eq!(
-            cpu.status,
-            Flags6502::V | Flags6502::N,
-            "Status does not match"
-        );
+        assert_eq!(bus_ref.cpu().a, 40, "Accumulator value incorrect after add");
+        check_flag!(status, Z, false);
+        check_flag!(status, C, false);
+        check_flag!(status, V, false);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn ADC_carry_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 1);
+        bus_ref.cpu_mut().a = 0xFF;
+
+        bus_ref.cpu_mut().ADC();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0, "Accumulator value incorrect after add");
+
+        check_flag!(status, Z, true);
+        check_flag!(status, C, true);
+        check_flag!(status, V, false);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn ADC_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 1);
+        bus_ref.cpu_mut().a = 0x7F;
+
+        bus_ref.cpu_mut().ADC();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x80, "Accumulator value incorrect after add");
+
+        check_flag!(status, Z, false);
+        check_flag!(status, C, false);
+        check_flag!(status, V, true);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn AND_test() {
-        let (mut cpu, _) = setup();
-        let mut cpu = cpu.borrow_mut();
-        cpu.a = 0b0101;
-        cpu.x = 0b0110;
-        cpu.addr_abs = 0x50;
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        cpu.opcode = 0x0E;
+        bus_ref.cpu_write(START_ADDR_ABS, 1);
+        bus_ref.cpu_mut().a = 0x7F;
 
-        cpu.STX();
-        cpu.AND();
-        assert_eq!(cpu.a, 0b0100, "AND operation failed");
-        assert_eq!(cpu.status, Flags6502::empty());
+        bus_ref.cpu_mut().AND();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x01, "Accumulator value incorrect after and");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn AND_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 0x80);
+        bus_ref.cpu_mut().a = 0x7F;
+
+        bus_ref.cpu_mut().AND();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x00, "Accumulator value incorrect after and");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn AND_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 0x81);
+        bus_ref.cpu_mut().a = 0xF0;
+
+        bus_ref.cpu_mut().AND();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x80, "Accumulator value incorrect after and");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn ASL_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.a = 0b1100_0110;
-        cpu.fetched = cpu.a;
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // The opcode of ASL with implied addressing
-        cpu.opcode = 0x0A;
-        cpu.ASL();
-        assert_eq!(
-            cpu.a, 0b1000_1100,
-            "Left shift of accumulator failed: {:b} vs {:b}",
-            cpu.a, 0b1000_1100
-        );
+        bus_ref.cpu_write(START_ADDR_ABS, 0x3F);
+        bus_ref.cpu_mut().a = 0x3F;
 
-        // The opcode of ASL with absolute addressing (although that doesn't really matter since we're setting the address manually anyway)
-        // All that matters is that the addressing mode of the specified instruction is not 'implied'
-        cpu.opcode = 0x0E;
-        cpu.a = 0b1100_0110;
-        cpu.addr_abs = 0x50;
-        cpu.STA();
-        cpu.ASL();
+        bus_ref.cpu_mut().ASL();
 
-        assert_eq!(
-            cpu.read(0x50),
-            0b1000_1100,
-            "Left shift in memory failed: {:b}, vs {:b}",
-            cpu.read(0x50),
-            0b1000_1101
-        );
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x3F, "Accumulator modified, despite addressing mode not implied");
+        assert_eq!(bus_ref.cpu_read(START_ADDR_ABS, false), 0x7E, "Read value incorrect after left shift");
+        check_flag!(status, C, false);
+        check_flag!(status, Z, false);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn ASL_immediate_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().a = 0xFF;
+
+        // instruction with implied addressing mode
+        bus_ref.cpu_mut().opcode = 0x00;
+
+        bus_ref.cpu_mut().ASL();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0xFE, "Accumulator value incorrect after left shift");
+        check_flag!(status, C, true);
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn ASL_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().a = 0x80;
+
+        // instruction with implied addressing mode
+        bus_ref.cpu_mut().opcode = 0x00;
+
+        bus_ref.cpu_mut().ASL();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x00, "Accumulator value incorrect after left shift");
+        check_flag!(status, C, true);
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn BCC_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-
-        cpu.pc = 200;
-        cpu.addr_rel = 100;
-        cpu.set_flag(Flags6502::C, true);
-        cpu.BCC();
-        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
-        cpu.set_flag(Flags6502::C, false);
-        cpu.BCC();
-        assert_eq!(
-            cpu.pc, 300,
-            "branch did not happen, despite flag being clear"
-        );
+        branch_test!(C, BCC, false);
     }
 
     #[test]
     fn BCS_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-
-        cpu.pc = 200;
-        cpu.addr_rel = 100;
-        cpu.set_flag(Flags6502::C, false);
-        cpu.BCS();
-        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being set");
-        cpu.set_flag(Flags6502::C, true);
-        cpu.BCS();
-        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being set");
+        branch_test!(C, BCS, true);
     }
 
     #[test]
     fn BEQ_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-
-        cpu.pc = 200;
-        cpu.addr_rel = 100;
-        cpu.set_flag(Flags6502::Z, false);
-        cpu.BEQ();
-        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being set");
-        cpu.set_flag(Flags6502::Z, true);
-        cpu.BEQ();
-        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being set");
+        branch_test!(Z, BEQ, true);
     }
 
     #[test]
     fn BNE_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-
-        cpu.pc = 200;
-        cpu.addr_rel = 100;
-        cpu.set_flag(Flags6502::Z, true);
-        cpu.BNE();
-        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
-        cpu.set_flag(Flags6502::Z, false);
-        cpu.BNE();
-        assert_eq!(
-            cpu.pc, 300,
-            "branch did not happen, despite flag being clear"
-        );
+        branch_test!(Z, BNE, false);
     }
 
     #[test]
     fn BPL_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-
-        cpu.pc = 200;
-        cpu.addr_rel = 100;
-        cpu.set_flag(Flags6502::N, true);
-        cpu.BPL();
-        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
-        cpu.set_flag(Flags6502::N, false);
-        cpu.BPL();
-        assert_eq!(
-            cpu.pc, 300,
-            "branch did not happen, despite flag being clear"
-        );
+        branch_test!(N, BPL, false);
     }
 
     #[test]
     fn BMI_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-
-        cpu.pc = 200;
-        cpu.addr_rel = 100;
-        cpu.set_flag(Flags6502::N, false);
-        cpu.BMI();
-        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being set");
-        cpu.set_flag(Flags6502::N, true);
-        cpu.BMI();
-        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being set");
+        branch_test!(N, BMI, true);
     }
 
     #[test]
     fn BVC_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-
-        cpu.pc = 200;
-        cpu.addr_rel = 100;
-        cpu.set_flag(Flags6502::V, false);
-        cpu.BVC();
-        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being set");
-        cpu.set_flag(Flags6502::V, true);
-        cpu.BVC();
-        assert_eq!(cpu.pc, 300, "branch did not happen, despite flag being set");
+        branch_test!(V, BVC, false);
     }
 
     #[test]
     fn BVS_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
+        branch_test!(V, BVS, true);
+    }
 
-        cpu.pc = 200;
-        cpu.addr_rel = 100;
-        cpu.set_flag(Flags6502::V, true);
-        cpu.BVS();
-        assert_eq!(cpu.pc, 200, "branch happened, despite flag not being clear");
-        cpu.set_flag(Flags6502::V, false);
-        cpu.BVS();
-        assert_eq!(
-            cpu.pc, 300,
-            "branch did not happen, despite flag being clear"
-        );
+    #[test]
+    fn BRK_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.status = Flags6502::empty();
+
+        cpu_ref.BRK();
+
+        assert_eq!(cpu_ref.pc, 0x0000, "New program counter incorrectly read");
+
+        let stored_status = Flags6502::from_bits(cpu_ref.pop_stack()).unwrap();
+        check_flag!(stored_status, I, true);
+        check_flag!(stored_status, B, true);
+        check_flag!(stored_status, U, true);
+
+        let old_pc = {
+            let lo = cpu_ref.pop_stack();
+            let hi = cpu_ref.pop_stack();
+            (lo as u16) | ((hi as u16) << 8)
+        };
+
+        assert_eq!(old_pc, START_PC + 1, "Old program counter not read/saved correctly");
+
+        let status = cpu_ref.status;
+        check_flag!(status, I, true);
+        check_flag!(status, B, false);
     }
 
     #[test]
     fn BIT_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        cpu.addr_abs = 0x50;
-        cpu.opcode = 0x0E;
-        cpu.write(cpu.addr_abs, 0xFF);
-        cpu.BIT();
+        bus_ref.cpu_write(START_ADDR_ABS, 0xF0);
+        bus_ref.cpu_mut().a = 0x0F;
 
-        assert_eq!(
-            cpu.status,
-            Flags6502::Z | Flags6502::N | Flags6502::V,
-            "Status does not match"
-        )
+        bus_ref.cpu_mut().BIT();
+
+        let status = bus_ref.cpu().status;
+
+        check_flag!(status, Z, true);
+        check_flag!(status, V, true);
+        check_flag!(status, N, true);
     }
 
     #[test]
-    #[should_panic] // TODO Ram is as of yet not large enough to correctly test this
-    fn BRK_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-
-        // Write lo of the jump address
-        cpu.write(IRQ_PROGRAM_COUNTER, 0x20);
-        // Write hi of the jump adress
-        cpu.write(IRQ_PROGRAM_COUNTER + 1, 0x01);
-        // The current program counter (pc + 1 will be written to memory)
-        cpu.pc = 0x0123;
-
-        cpu.status = Flags6502::N | Flags6502::Z;
-
-        cpu.BRK();
-
-        assert_eq!(
-            Flags6502::from_bits(cpu.read(STACK_POINTER_BASE + cpu.stkp + 1)).unwrap(),
-            Flags6502::N | Flags6502::Z | Flags6502::B | Flags6502::I
-        );
-        assert_eq!(
-            cpu.read(STACK_POINTER_BASE + cpu.stkp + 2),
-            0x24,
-            "lo nibble of pc incorrect"
-        );
-        assert_eq!(
-            cpu.read(STACK_POINTER_BASE + cpu.stkp + 3),
-            0x01,
-            "hi nibble of pc incorrect"
-        );
-        assert_eq!(cpu.pc, 0x0120, "new jump address incorrect");
+    fn CLC_test() {
+        flag_set_test!(C, CLC, false);
     }
 
     #[test]
-    fn clear_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.status = Flags6502::C | Flags6502::D | Flags6502::I | Flags6502::V;
+    fn CLD_test() {
+        flag_set_test!(D, CLD, false);
+    }
 
-        cpu.CLC();
-        assert_eq!(cpu.status, Flags6502::D | Flags6502::I | Flags6502::V);
-        cpu.CLD();
-        assert_eq!(cpu.status, Flags6502::I | Flags6502::V);
-        cpu.CLI();
-        assert_eq!(cpu.status, Flags6502::V);
-        cpu.CLV();
-        assert_eq!(cpu.status, Flags6502::empty());
+    #[test]
+    fn CLI_test() {
+        flag_set_test!(I, CLI, false);
+    }
+
+    #[test]
+    fn CLV_test() {
+        flag_set_test!(V, CLV, false);
     }
 
     #[test]
     fn CMP_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.addr_abs = 0x501;
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode, that has absolute addressing
-        cpu.opcode = 0x0E;
+        bus_ref.cpu_write(START_ADDR_ABS, 10);
+        bus_ref.cpu_mut().a = 10;
 
-        // Test acc greater
-        cpu.write(0x501, 10);
-        cpu.a = 20;
-        cpu.CMP();
-        assert_eq!(cpu.status, Flags6502::C);
+        bus_ref.cpu_mut().CMP();
 
-        // Test acc equal to memory
-        cpu.write(0x501, 10);
-        cpu.a = 10;
-        cpu.CMP();
-        assert_eq!(cpu.status, Flags6502::C | Flags6502::Z);
+        let status = bus_ref.cpu().status;
 
-        // Test acc lesser than memory
-        cpu.write(0x501, 10);
-        cpu.a = 0;
-        cpu.CMP();
-        assert_eq!(cpu.status, Flags6502::N);
+        check_flag!(status, Z, true);
+        check_flag!(status, C, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn CMP_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 30);
+        bus_ref.cpu_mut().a = 10;
+
+        bus_ref.cpu_mut().CMP();
+
+        let status = bus_ref.cpu().status;
+
+        check_flag!(status, Z, false);
+        check_flag!(status, C, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn CPX_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.addr_abs = 0x501;
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode, that has absolute addressing
-        cpu.opcode = 0x0E;
+        bus_ref.cpu_write(START_ADDR_ABS, 10);
+        bus_ref.cpu_mut().x = 10;
 
-        // Test x greater
-        cpu.write(0x501, 10);
-        cpu.x = 20;
-        cpu.CPX();
-        assert_eq!(cpu.status, Flags6502::C);
+        bus_ref.cpu_mut().CPX();
 
-        // Test x equal to memory
-        cpu.write(0x501, 10);
-        cpu.x = 10;
-        cpu.CPX();
-        assert_eq!(cpu.status, Flags6502::C | Flags6502::Z);
+        let status = bus_ref.cpu().status;
 
-        // Test acc lesser than memory
-        cpu.write(0x501, 10);
-        cpu.x = 0;
-        cpu.CPX();
-        assert_eq!(cpu.status, Flags6502::N);
+        check_flag!(status, Z, true);
+        check_flag!(status, C, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn CPX_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 30);
+        bus_ref.cpu_mut().x = 10;
+
+        bus_ref.cpu_mut().CPX();
+
+        let status = bus_ref.cpu().status;
+
+        check_flag!(status, Z, false);
+        check_flag!(status, C, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn CPY_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.addr_abs = 0x501;
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode, that has absolute addressing
-        cpu.opcode = 0x0E;
+        bus_ref.cpu_write(START_ADDR_ABS, 10);
+        bus_ref.cpu_mut().y = 10;
 
-        // Test y greater
-        cpu.write(0x501, 10);
-        cpu.y = 20;
-        cpu.CPY();
-        assert_eq!(cpu.status, Flags6502::C);
+        bus_ref.cpu_mut().CPY();
 
-        // Test x equal to memory
-        cpu.write(0x501, 10);
-        cpu.y = 10;
-        cpu.CPY();
-        assert_eq!(cpu.status, Flags6502::C | Flags6502::Z);
+        let status = bus_ref.cpu().status;
 
-        // Test acc lesser than memory
-        cpu.write(0x501, 10);
-        cpu.y = 0;
-        cpu.CPY();
-        assert_eq!(cpu.status, Flags6502::N);
+        check_flag!(status, Z, true);
+        check_flag!(status, C, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn CPY_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 30);
+        bus_ref.cpu_mut().y = 10;
+
+        bus_ref.cpu_mut().CPY();
+
+        let status = bus_ref.cpu().status;
+
+        check_flag!(status, Z, false);
+        check_flag!(status, C, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn DEC_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.addr_abs = 0x501;
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode, that has absolute addressing
-        cpu.opcode = 0x0E;
+        bus_ref.cpu_write(START_ADDR_ABS, 1);
 
-        // Write 10 to memory location 0x1111
-        cpu.write(0x501, 10);
-        cpu.DEC();
+        bus_ref.cpu_mut().DEC();
 
-        // Test if decrement worked
-        assert_eq!(cpu.read(0x501), 9);
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu_read(START_ADDR_ABS, false), 0, "Memory value not decremented correctly");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn DEC_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 0);
+
+        bus_ref.cpu_mut().DEC();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu_read(START_ADDR_ABS, false), 0xFF, "Memory value not decremented correctly");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn DEX_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.x = 10;
-        cpu.DEX();
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Test if decrement worked
-        assert_eq!(cpu.x, 9);
+        bus_ref.cpu_mut().x = 1;
+
+        bus_ref.cpu_mut().DEX();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().x, 0, "x register not decremented correctly");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn DEX_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().x = 0;
+
+        bus_ref.cpu_mut().DEX();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().x, 255, "x register not decremented correctly");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn DEY_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.y = 10;
-        cpu.DEY();
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Test if decrement worked
-        assert_eq!(cpu.y, 9);
+        bus_ref.cpu_mut().y = 1;
+
+        bus_ref.cpu_mut().DEY();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().y, 0, "y register not decremented correctly");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn DEY_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().y = 0;
+
+        bus_ref.cpu_mut().DEY();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().y, 255, "y register not decremented correctly");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn EOR_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.a = 0b0101;
-        cpu.x = 0b0110;
-        cpu.addr_abs = 0x501;
-        cpu.opcode = 0x0E;
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
 
-        cpu.STX();
-        cpu.EOR();
-        assert_eq!(cpu.a, 0b0011, "XOR operation failed");
-        assert_eq!(cpu.status, Flags6502::empty());
+        bus_ref.cpu_write(START_ADDR_ABS, 0xF0);
+        cpu_ref.a = 0x0F;
+
+        cpu_ref.EOR();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.a, 0xFF, "Accumulator value incorrect after XOR");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true)
+    }
+
+    #[test]
+    fn EOR_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 0x0F);
+        cpu_ref.a = 0x0F;
+
+        cpu_ref.EOR();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.a, 0x00, "Accumulator value incorrect after XOR");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false)
     }
 
     #[test]
     fn INC_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.addr_abs = 0x501;
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode, that has absolute addressing
-        cpu.opcode = 0x0E;
+        bus_ref.cpu_write(START_ADDR_ABS, 255);
 
-        // Write 10 to memory location 0x1111
-        cpu.write(0x501, 10);
-        cpu.INC();
+        bus_ref.cpu_mut().INC();
 
-        // Test if increment worked
-        assert_eq!(cpu.read(0x501), 11);
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu_read(START_ADDR_ABS, false), 0, "Memory value not incremented correctly");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn INC_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 0x7F);
+
+        bus_ref.cpu_mut().INC();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu_read(START_ADDR_ABS, false), 0x80, "Memory value not incremented correctly");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn INX_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.x = 10;
-        cpu.INX();
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Test if increment worked
-        assert_eq!(cpu.x, 11);
+        bus_ref.cpu_mut().x = 255;
+
+        bus_ref.cpu_mut().INX();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().x, 0, "x register not incremented correctly");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn INX_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().x = 0x7F;
+
+        bus_ref.cpu_mut().INX();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().x, 0x80, "x register not incremented correctly");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn INY_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.y = 10;
-        cpu.INY();
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Test if decrement worked
-        assert_eq!(cpu.y, 11);
+        bus_ref.cpu_mut().y = 255;
+
+        bus_ref.cpu_mut().INY();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().y, 0, "y register not incremented correctly");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn INY_negative_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().y = 0x7F;
+
+        bus_ref.cpu_mut().INY();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().y, 0x80, "y register not incremented correctly");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
     }
 
     #[test]
     fn JMP_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        cpu.addr_abs = 0x1111;
-        cpu.JMP();
-        assert_eq!(cpu.pc, 0x1111);
+        bus_ref.cpu_mut().JMP();
+        assert_eq!(bus_ref.cpu().pc, START_ADDR_ABS, "Jump to incorrect address");
     }
 
     #[test]
     fn JSR_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.pc = 0x1235;
-        cpu.addr_abs = 0x1111;
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        cpu.JSR();
-        assert_eq!(cpu.read(STACK_POINTER_BASE + cpu.stkp + 1), 0x34, "Lo byte of return address incorrect");
-        assert_eq!(cpu.read(STACK_POINTER_BASE + cpu.stkp + 2), 0x12, "Hi byte of return address incorrect");
-        assert_eq!(cpu.pc, 0x1111, "Jumped to wrong address or did not jump at all");
+        bus_ref.cpu_mut().JSR();
+        assert_eq!(bus_ref.cpu().pc, START_ADDR_ABS, "Jump to incorrect address");
+
+        let old_addr = {
+            let lo = bus_ref.cpu_mut().pop_stack();
+            let hi = bus_ref.cpu_mut().pop_stack();
+            (lo as u16) | ((hi as u16) << 8)
+        };
+
+        assert_eq!(old_addr, START_PC - 1, "Old address saved/read incorrectly");
     }
 
     #[test]
     fn LDA_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.write(0x501, 100);
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode with absolute addressing
-        cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x501;
-        cpu.LDA();
+        bus_ref.cpu_write(START_ADDR_ABS, 0x80);
+        bus_ref.cpu_mut().LDA();
 
-        assert_eq!(cpu.a, 100, "Accumulator not loaded or loaded incorrectly");
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x80, "data not loaded correctly");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn LDA_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 0x00);
+        bus_ref.cpu_mut().LDA();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x00, "data not loaded correctly");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn LDX_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.write(0x501, 100);
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode with absolute addressing
-        cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x501;
-        cpu.LDX();
+        bus_ref.cpu_write(START_ADDR_ABS, 0x80);
+        bus_ref.cpu_mut().LDX();
 
-        assert_eq!(cpu.x, 100, "X Register not loaded or loaded incorrectly");
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().x, 0x80, "data not loaded correctly");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn LDX_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 0x00);
+        bus_ref.cpu_mut().LDX();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().x, 0x00, "data not loaded correctly");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn LDY_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.write(0x501, 100);
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode with absolute addressing
-        cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x501;
-        cpu.LDY();
+        bus_ref.cpu_write(START_ADDR_ABS, 0x80);
+        bus_ref.cpu_mut().LDY();
 
-        assert_eq!(cpu.y, 100, "Y Register not loaded or loaded incorrectly");
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().y, 0x80, "data not loaded correctly");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn LDY_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 0x00);
+        bus_ref.cpu_mut().LDY();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().y, 0x00, "data not loaded correctly");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn LSR_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.write(0x501, 0b0110);
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode with absolute addressing
-        cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x501;
-        cpu.LSR();
+        bus_ref.cpu_write(START_ADDR_ABS, 0x01);
+        bus_ref.cpu_mut().a = 0x01;
 
-        assert_eq!(cpu.read(0x501), 0b0011, "Memory value not shifted correctly");
+        bus_ref.cpu_mut().LSR();
 
+        let status = bus_ref.cpu().status;
 
-        // Random opcode with implied addressing
-        cpu.opcode = 0x00;
-        cpu.a = 0b0110;
-        cpu.IMP();
-        cpu.LSR();
-        assert_eq!(cpu.a, 0b0011, "Accumulator not shifted correctly");
+        assert_eq!(bus_ref.cpu().a, 0x01, "Accumulator modified, despite addressing mode not implied");
+        assert_eq!(bus_ref.cpu_read(START_ADDR_ABS, false), 0x00, "Read value incorrect after right shift");
+        check_flag!(status, C, true);
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn LSR_immediate_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().a = 0xFE;
+
+        // instruction with implied addressing mode
+        bus_ref.cpu_mut().opcode = 0x00;
+
+        bus_ref.cpu_mut().LSR();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x7F, "Accumulator value incorrect after right shift");
+        check_flag!(status, C, false);
+        check_flag!(status, Z, false);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn NOP_test() {
-        Cpu6502::new().NOP();
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().NOP();
+        // huh
     }
 
     #[test]
     fn ORA_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.a = 0b0101;
-        cpu.write(0x501, 0b0110);
-        cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x501;
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
 
-        cpu.ORA();
-        assert_eq!(cpu.a, 0b0111, "OR operation failed");
-        assert_eq!(cpu.status, Flags6502::empty());
+        bus_ref.cpu_write(START_ADDR_ABS, 0xF0);
+        cpu_ref.a = 0x0F;
+
+        cpu_ref.ORA();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.a, 0xFF, "Accumulator value incorrect after OR");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true)
     }
 
     #[test]
-    fn PHA_PLA_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.a = 0b0101;
-        cpu.PHA();
-        assert_eq!(cpu.read(STACK_POINTER_BASE + cpu.stkp + 1), cpu.a);
+    fn ORA_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
 
-        cpu.a = 0;
-        cpu.PLA();
-        assert_eq!(cpu.a, 0b0101);
+        bus_ref.cpu_write(START_ADDR_ABS, 0x00);
+        cpu_ref.a = 0x00;
+
+        cpu_ref.ORA();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.a, 0x00, "Accumulator value incorrect after OR");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false)
     }
 
     #[test]
-    fn PHP_PLP_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.status = Flags6502::C | Flags6502::N;
-        cpu.PHP();
-        assert_eq!(Flags6502::from_bits(cpu.read(STACK_POINTER_BASE + cpu.stkp + 1)).unwrap(), cpu.status);
-        cpu.status = Flags6502::empty();
-        cpu.PLP();
-        assert_eq!(cpu.status, Flags6502::C | Flags6502::N | Flags6502::U);
+    fn PHA_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.a = 10;
+        cpu_ref.PHA();
+
+        assert_eq!(cpu_ref.pop_stack(), 10, "Accumulator not pushed to stack");
+    }
+
+    #[test]
+    fn PHP_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.status = Flags6502::from_bits(0x0F).unwrap();
+        cpu_ref.PHP();
+        let status = cpu_ref.pop_stack();
+        assert_ne!(status, 0x0F, "B and U flag not pushed to stack");
+        assert_eq!(status, 0x3F, "Status not pushed to stack");
+    }
+
+    #[test]
+    fn PLA_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.push_stack(0xF0);
+        cpu_ref.PLA();
+
+        let status = cpu_ref.status;
+        assert_eq!(cpu_ref.a, 0xF0, "Accumulator not popped from stack");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn PLA_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.push_stack(0x00);
+        cpu_ref.PLA();
+
+        let status = cpu_ref.status;
+        assert_eq!(cpu_ref.a, 0x00, "Accumulator not popped from stack");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false)
+    }
+
+    #[test]
+    fn PLP_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.push_stack(0x0F);
+        cpu_ref.PLP();
+
+        let status = cpu_ref.status.bits();
+        assert_ne!(status, 0x0F, "Unused flag not pulled from stack");
+        assert_eq!(status, 0x2F, "Status not pulled from stack");
     }
 
     #[test]
     fn ROL_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.write(0x501, 0b1000_1100);
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode with absolute addressing
-        cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x501;
-        cpu.ROL();
+        bus_ref.cpu_write(START_ADDR_ABS, 0x80);
+        bus_ref.cpu_mut().a = 0x80;
 
-        assert_eq!(cpu.read(0x501), 0b0001_1001, "Memory value not rotated correctly");
+        bus_ref.cpu_mut().ROL();
 
-        // Random opcode with implied addressing
-        cpu.opcode = 0x00;
-        cpu.a = 0b1000_1100;
-        cpu.IMP();
-        cpu.ROL();
-        assert_eq!(cpu.a, 0b0001_1001, "Accumulator not rotated correctly");
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x80, "Accumulator modified, despite addressing mode not implied");
+        assert_eq!(bus_ref.cpu_read(START_ADDR_ABS, false), 0x01, "Read value incorrect after left bit rotate");
+        check_flag!(status, C, true);
+        check_flag!(status, Z, false);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn ROL_immediate_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().a = 0x40;
+
+        // instruction with implied addressing mode
+        bus_ref.cpu_mut().opcode = 0x00;
+
+        bus_ref.cpu_mut().ROL();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x80, "Accumulator value incorrect after left bit rotate");
+        check_flag!(status, C, false);
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn ROL_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().a = 0x00;
+
+        // instruction with implied addressing mode
+        bus_ref.cpu_mut().opcode = 0x00;
+
+        bus_ref.cpu_mut().ROL();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x00, "Accumulator value incorrect after left bit rotate");
+        check_flag!(status, C, false);
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn ROR_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.write(0x501, 0b1000_1001);
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        // Random opcode with absolute addressing
-        cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x501;
-        cpu.ROR();
+        bus_ref.cpu_write(START_ADDR_ABS, 0x01);
+        bus_ref.cpu_mut().a = 0x01;
 
-        assert_eq!(cpu.read(0x501), 0b1100_0100, "Memory value not rotated correctly");
+        bus_ref.cpu_mut().ROR();
 
-        // Random opcode with implied addressing
-        cpu.opcode = 0x00;
-        cpu.a = 0b1000_1001;
-        cpu.IMP();
-        cpu.ROR();
-        assert_eq!(cpu.a, 0b1100_0100, "Accumulator not rotated correctly");
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x01, "Accumulator modified, despite addressing mode not implied");
+        assert_eq!(bus_ref.cpu_read(START_ADDR_ABS, false), 0x80, "Read value incorrect after right bit rotate");
+        check_flag!(status, C, true);
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn ROR_immediate_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().a = 0x40;
+
+        // instruction with implied addressing mode
+        bus_ref.cpu_mut().opcode = 0x00;
+
+        bus_ref.cpu_mut().ROR();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x20, "Accumulator value incorrect after right bit rotate");
+        check_flag!(status, C, false);
+        check_flag!(status, Z, false);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn ROR_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_mut().a = 0x00;
+
+        // instruction with implied addressing mode
+        bus_ref.cpu_mut().opcode = 0x00;
+
+        bus_ref.cpu_mut().ROR();
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0x00, "Accumulator value incorrect after right bit rotate");
+        check_flag!(status, C, false);
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn RTI_test() {
-        //TODO RTI test
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.status = Flags6502::empty();
+
+        assert_eq!(cpu_ref.pc, START_PC);
+
+        cpu_ref.BRK();
+
+        assert_eq!(cpu_ref.pc, 0x0000);
+
+        cpu_ref.RTI();
+
+        assert_eq!(cpu_ref.pc, START_PC + 1, "RTI did not return to connect address");
+
+        let status = cpu_ref.status;
+        check_flag!(status, B, false);
+        check_flag!(status, U, false);
     }
 
     #[test]
     fn RTS_test() {
-        //TODO RTS test
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+
+        cpu_ref.push_stack(0x12);
+        cpu_ref.push_stack(0x33);
+
+        cpu_ref.RTS();
+
+        assert_eq!(cpu_ref.pc, 0x1234, "Returned to wrong address");
     }
 
     #[test]
-    fn SBC_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.a = 30;
-        cpu.write(0x501, 10);
-        cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x501;
-        cpu.set_flag(Flags6502::C, true);
+    fn SBC_no_carry_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        cpu.SBC();
-        assert_eq!(cpu.a, 20, "Subtraction failed");
+        bus_ref.cpu_write(START_ADDR_ABS, 10);
+        bus_ref.cpu_mut().a = 30;
+
+        bus_ref.cpu_mut().SBC();
+
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 19, "Accumulator value incorrect after subtraction");
+        check_flag!(status, Z, false);
+        check_flag!(status, C, true);
+        check_flag!(status, V, false);
+        check_flag!(status, N, false);
     }
 
     #[test]
-    fn set_flags_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
+    fn SBC_carry_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        cpu.SEC();
-        cpu.SED();
-        cpu.SEI();
-        assert_eq!(cpu.status, Flags6502::C | Flags6502::D | Flags6502::I);
+        bus_ref.cpu_write(START_ADDR_ABS, 10);
+        bus_ref.cpu_mut().a = 30;
+        bus_ref.cpu_mut().set_flag(Flags6502::C, true);
+
+        bus_ref.cpu_mut().SBC();
+
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 20, "Accumulator value incorrect after subtraction");
+        check_flag!(status, Z, false);
+        check_flag!(status, C, true);
+        check_flag!(status, V, false);
+        check_flag!(status, N, false);
     }
 
     #[test]
-    fn store_test() {
-        let (mut cpu, _) = setup();
-let mut cpu = cpu.borrow_mut();
-        cpu.a = 10;
-        cpu.x = 15;
-        cpu.y = 20;
+    fn SBC_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
 
-        cpu.opcode = 0x0E;
-        cpu.addr_abs = 0x501;
-        cpu.STA();
-        assert_eq!(cpu.read(cpu.addr_abs), cpu.a, "Storing accumulator failed");
-        cpu.STX();
-        assert_eq!(cpu.read(cpu.addr_abs), cpu.x, "Storing X register failed");
-        cpu.STY();
-        assert_eq!(cpu.read(cpu.addr_abs), cpu.y, "Storing Y register failed");
+        bus_ref.cpu_write(START_ADDR_ABS, 30);
+        bus_ref.cpu_mut().a = 30;
+        bus_ref.cpu_mut().set_flag(Flags6502::C, true);
+
+        bus_ref.cpu_mut().SBC();
+
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 0, "Accumulator value incorrect after subtraction");
+        check_flag!(status, Z, true);
+        check_flag!(status, C, true);
+        check_flag!(status, V, false);
+        check_flag!(status, N, false);
+    }
+
+    #[test]
+    fn SBC_borrow_required_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+
+        bus_ref.cpu_write(START_ADDR_ABS, 20);
+        bus_ref.cpu_mut().a = 10;
+        bus_ref.cpu_mut().set_flag(Flags6502::C, true);
+
+        bus_ref.cpu_mut().SBC();
+
+
+        let status = bus_ref.cpu().status;
+
+        assert_eq!(bus_ref.cpu().a, 246, "Accumulator value incorrect after subtraction");
+        check_flag!(status, Z, false);
+        check_flag!(status, C, false);
+        check_flag!(status, V, true);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn SEC_test() {
+        flag_set_test!(C, SEC, true);
+    }
+
+    #[test]
+    fn SED_test() {
+        flag_set_test!(D, SED, true);
+    }
+
+    #[test]
+    fn SEI_test() {
+        flag_set_test!(I, SEI, true);
+    }
+
+    #[test]
+    fn STA_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.a = 20;
+        cpu_ref.STA();
+
+        assert_eq!(cpu_ref.read(START_ADDR_ABS), 20, "Accumulator not stored correctly");
+    }
+
+    #[test]
+    fn STX_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.x = 20;
+        cpu_ref.STX();
+
+        assert_eq!(cpu_ref.read(START_ADDR_ABS), 20, "X register not stored correctly");
+    }
+
+
+    #[test]
+    fn STY_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.y = 20;
+        cpu_ref.STY();
+
+        assert_eq!(cpu_ref.read(START_ADDR_ABS), 20, "Y register not stored correctly");
     }
 
     #[test]
     fn TAX_test() {
-        let mut cpu = Cpu6502::new();
-        cpu.a = 5;
-        cpu.TAX();
-        assert_eq!(cpu.x, cpu.a);
-        assert_eq!(cpu.status, Flags6502::empty());
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.a = 0xF0;
+        cpu_ref.TAX();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.x, 0xF0, "Accumulator not moved to X register");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn TAX_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.a = 0x00;
+        cpu_ref.TAX();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.x, 0x00, "Accumulator not moved to X register");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn TAY_test() {
-        let mut cpu = Cpu6502::new();
-        cpu.a = 5;
-        cpu.TAY();
-        assert_eq!(cpu.y, cpu.a);
-        assert_eq!(cpu.status, Flags6502::empty());
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.a = 0xF0;
+        cpu_ref.TAY();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.y, 0xF0, "Accumulator not moved to Y register");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn TAY_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.a = 0x00;
+        cpu_ref.TAY();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.y, 0x00, "Accumulator not moved to Y register");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn TSX_test() {
-        let mut cpu = Cpu6502::new();
-        cpu.stkp = 5;
-        cpu.TSX();
-        assert_eq!(cpu.x as u16, cpu.stkp);
-        assert_eq!(cpu.status, Flags6502::empty());
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.stkp = 0xF0;
+        cpu_ref.TSX();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.x, 0xF0, "Stack pointer not moved to X register");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn TSX_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.stkp = 0x00;
+        cpu_ref.TSX();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.x, 0x00, "Stack pointer not moved to X register");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn TXA_test() {
-        let mut cpu = Cpu6502::new();
-        cpu.x = 5;
-        cpu.TXA();
-        assert_eq!(cpu.a, cpu.x);
-        assert_eq!(cpu.status, Flags6502::empty());
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.x = 0xF0;
+        cpu_ref.TXA();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.a, 0xF0, "X register not moved to Accumulator");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn TXA_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.x = 0x00;
+        cpu_ref.TXA();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.a, 0x00, "X register not moved to Accumulator");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn TXS_test() {
-        let mut cpu = Cpu6502::new();
-        cpu.x = 5;
-        cpu.TXS();
-        assert_eq!(cpu.stkp, cpu.x as u16);
-        assert_eq!(cpu.status, Flags6502::empty());
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.x = 0xF0;
+        cpu_ref.TXS();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.stkp, 0xF0, "X register not moved to Stack Pointer");
+    }
+
+    #[test]
+    fn TXS_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.x = 0x00;
+        cpu_ref.TXS();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.stkp, 0x00, "X register not moved to Stack Pointer");
     }
 
     #[test]
     fn TYA_test() {
-        let mut cpu = Cpu6502::new();
-        cpu.y = 5;
-        cpu.TYA();
-        assert_eq!(cpu.a, cpu.y);
-        assert_eq!(cpu.status, Flags6502::empty());
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.y = 0xF0;
+        cpu_ref.TYA();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.a, 0xF0, "Y register not moved to Accumulator");
+        check_flag!(status, Z, false);
+        check_flag!(status, N, true);
+    }
+
+    #[test]
+    fn TYA_zero_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.y = 0x00;
+        cpu_ref.TYA();
+
+        let status = cpu_ref.status;
+
+        assert_eq!(cpu_ref.a, 0x00, "Y register not moved to Accumulator");
+        check_flag!(status, Z, true);
+        check_flag!(status, N, false);
     }
 
     #[test]
     fn XXX_test() {
-        Cpu6502::new().XXX();
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+        cpu_ref.XXX();
+        // ok
+    }
+
+    #[test]
+    fn is_implied_test() {
+        let bus = setup();
+        let bus_ref = bus.borrow();
+        let mut cpu_ref = bus_ref.cpu_mut();
+
+        assert!(!cpu_ref.is_implied());
+        cpu_ref.opcode = 0x00;
+        assert!(cpu_ref.is_implied());
     }
 }
-*/
+
